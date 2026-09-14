@@ -1,7 +1,8 @@
 -- ============================================================================
--- LEON4951 HUB - LOADSCRIPT COMPATIBLE & FIXED MINI UI
+-- LEON4951 HUB - STRICT FIXED MINI UI (240x230 EXPLICIT, DIKECILKAN)
 -- ============================================================================
 
+-- [ PRE-INITIALIZATION CLEANUP ]
 local CoreGui = game:GetService("CoreGui")
 local Players = game:GetService("Players")
 local LocalPlayer = Players.LocalPlayer
@@ -15,9 +16,12 @@ end
 
 DestroyOldUI("leon4951HubGui")
 
+-- [ 1. SERVICES ]
 local TweenService = game:GetService("TweenService")
 local UserInputService = game:GetService("UserInputService")
+local RunService = game:GetService("RunService")
 
+-- [ 2. CONFIGURATION & THEME ]
 local Theme = {
     Background = Color3.fromRGB(11, 14, 21),
     CardBg = Color3.fromRGB(18, 23, 34),
@@ -31,6 +35,7 @@ local Theme = {
     BorderColor = Color3.fromRGB(28, 36, 52)
 }
 
+-- [ 3. FEATURE TOGGLE STATE (VISUAL ONLY) ]
 local Features = {
     LagPlayers = false,
     PrivateServer = false,
@@ -38,6 +43,7 @@ local Features = {
     AutoStackPlayersOnLoading = false
 }
 
+-- [ 4. CREATE UI ROOT & FIXED MINI CONTAINER ]
 local ScreenGui = Instance.new("ScreenGui")
 ScreenGui.Name = "leon4951HubGui"
 ScreenGui.ResetOnSpawn = false
@@ -46,6 +52,7 @@ ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 pcall(function() ScreenGui.Parent = CoreGui end)
 if not ScreenGui.Parent then ScreenGui.Parent = LocalPlayer:WaitForChild("PlayerGui") end
 
+-- Main Window Frame (EXPLICIT FIXED MINI: 340 x 330)
 local MainFrame = Instance.new("Frame")
 MainFrame.Name = "MainFrame"
 MainFrame.Size = UDim2.fromOffset(240, 230)
@@ -55,6 +62,7 @@ MainFrame.BackgroundColor3 = Theme.Background
 MainFrame.BorderSizePixel = 0
 MainFrame.ClipsDescendants = false
 MainFrame.Active = true
+MainFrame.Visible = false
 MainFrame.Parent = ScreenGui
 
 local MainCorner = Instance.new("UICorner")
@@ -67,9 +75,10 @@ MainStroke.Thickness = 1
 MainStroke.Parent = MainFrame
 
 local MainScale = Instance.new("UIScale")
-MainScale.Scale = 1
+MainScale.Scale = 0
 MainScale.Parent = MainFrame
 
+-- [ 5. HELPER FUNCTIONS FOR VECTOR GUI ICONS ]
 local function CreateFLogo(size, rotation)
     local container = Instance.new("Frame")
     container.Size = size
@@ -128,6 +137,7 @@ local function CustomDrawIcon(iconType, parent)
         Instance.new("UICorner", body).CornerRadius = UDim.new(0, 4)
         
     elseif iconType == "Shield" then
+        -- Ikon server rack (3 bar bertumpuk) biar nyambung sama "Private Server"
         for i = 0, 2 do
             local bar = Instance.new("Frame")
             bar.Size = UDim2.fromOffset(16, 4)
@@ -197,6 +207,7 @@ local function CustomDrawIcon(iconType, parent)
     end
 end
 
+-- [ 6. HEADER SYSTEM ]
 local Header = Instance.new("Frame")
 Header.Name = "Header"
 Header.Size = UDim2.new(1, 0, 0, 30)
@@ -260,6 +271,7 @@ local function CreateHeaderButton(iconText, callback)
     return btn
 end
 
+-- [ 7. NAVIGATION BAR ]
 local NavContainer = Instance.new("Frame")
 NavContainer.Name = "NavContainer"
 NavContainer.Size = UDim2.new(1, -20, 0, 20)
@@ -312,6 +324,7 @@ ActiveLine.BackgroundColor3 = Theme.AccentBlue
 ActiveLine.BorderSizePixel = 0
 ActiveLine.Parent = Underline
 
+-- [ 8. SCROLLABLE FEATURE AREA (FITS 4 CARDS WITH SCROLL) ]
 local FeatureScrollingFrame = Instance.new("ScrollingFrame")
 FeatureScrollingFrame.Name = "FeatureScrollingFrame"
 FeatureScrollingFrame.Size = UDim2.new(1, -20, 1, -58)
@@ -338,67 +351,102 @@ UIPadding.PaddingBottom = UDim.new(0, 4)
 UIPadding.PaddingRight = UDim.new(0, 2)
 UIPadding.Parent = FeatureScrollingFrame
 
-local ToastContainer = Instance.new("Frame")
-ToastContainer.Name = "ToastContainer"
-ToastContainer.Size = UDim2.fromOffset(0, 0)
-ToastContainer.AnchorPoint = Vector2.new(1, 1)
-ToastContainer.Position = UDim2.new(1, -16, 1, -170)
-ToastContainer.BackgroundTransparency = 1
-ToastContainer.Parent = ScreenGui
+-- [ SISTEM ANTRIAN LOADING (BERTUMPUK, KARTU LONJONG DI KANAN LAYAR) ]
+local LoadingContainer = Instance.new("Frame")
+LoadingContainer.Name = "LoadingContainer"
+LoadingContainer.Size = UDim2.fromOffset(0, 0)
+LoadingContainer.AnchorPoint = Vector2.new(1, 1)
+LoadingContainer.Position = UDim2.new(1, -16, 1, -100)
+LoadingContainer.BackgroundTransparency = 1
+LoadingContainer.Parent = ScreenGui
 
-local TOAST_W, TOAST_H, TOAST_GAP = 160, 44, 8
-local activeToasts = {}
+local CARD_W, CARD_H, CARD_GAP = 280, 60, 8
 
-local function ReflowToasts()
-    for i, toast in ipairs(activeToasts) do
-        local targetY = -((i - 1) * (TOAST_H + TOAST_GAP))
-        TweenService:Create(toast, TweenInfo.new(0.25, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+-- Teks loading per fitur (dummy, cuma visual)
+local LoadingTextMap = {
+    LagPlayers = "Activating Lag Players...",
+    PrivateServer = "Activating Private Server...",
+    AutoKickOtherPlayers = "Activating Auto Kick...",
+    AutoStackPlayersOnLoading = "Activating Auto Stack..."
+}
+
+-- Nama pendek buat teks "✓ [Nama] Active" pas loading selesai
+local ActiveNameMap = {
+    LagPlayers = "Lag Players",
+    PrivateServer = "Private Server",
+    AutoKickOtherPlayers = "Auto Kick",
+    AutoStackPlayersOnLoading = "Auto Stack"
+}
+
+-- Subtext final per fitur pas status jadi "Active" (bukan cuma "Ready" generik semua)
+local FinalSubTextMap = {
+    LagPlayers = "System Ready",
+    PrivateServer = "Ready",
+    AutoKickOtherPlayers = "Protection Enabled",
+    AutoStackPlayersOnLoading = "System Ready"
+}
+
+local loadingQueue = {} -- urutan lama -> baru; index 1 = paling bawah (paling lama)
+local activeLoadings = {} -- stateKey -> { frame = ..., token = ... }
+
+local function ReflowLoadingQueue()
+    for i, entry in ipairs(loadingQueue) do
+        local targetY = -((i - 1) * (CARD_H + CARD_GAP))
+        TweenService:Create(entry.frame, TweenInfo.new(0.25, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
             Position = UDim2.fromOffset(0, targetY)
         }):Play()
     end
 end
 
-local function RemoveToast(toast)
-    for i, t in ipairs(activeToasts) do
-        if t == toast then
-            table.remove(activeToasts, i)
+local function RemoveLoadingCard(stateKey)
+    local entry = activeLoadings[stateKey]
+    if not entry then return end
+
+    if entry.conn then
+        entry.conn:Disconnect()
+        entry.conn = nil
+    end
+
+    activeLoadings[stateKey] = nil
+    for i, q in ipairs(loadingQueue) do
+        if q == entry then
+            table.remove(loadingQueue, i)
             break
         end
     end
 
-    TweenService:Create(toast, TweenInfo.new(0.2, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {
-        BackgroundTransparency = 1
+    TweenService:Create(entry.frame, TweenInfo.new(0.2, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {
+        GroupTransparency = 1
     }):Play()
 
     task.delay(0.2, function()
-        toast:Destroy()
+        entry.frame:Destroy()
     end)
 
-    ReflowToasts()
+    ReflowLoadingQueue()
 end
 
-local function ShowLoadingToast(featureName)
-    local toast = Instance.new("Frame")
-    toast.Size = UDim2.fromOffset(TOAST_W, TOAST_H)
-    toast.AnchorPoint = Vector2.new(1, 1)
-    toast.Position = UDim2.fromOffset(0, 0)
-    toast.BackgroundColor3 = Theme.CardBg
-    toast.BorderSizePixel = 0
-    toast.Parent = ToastContainer
+local function CreateLoadingCard(stateKey, displayName)
+    local card = Instance.new("CanvasGroup")
+    card.Size = UDim2.fromOffset(CARD_W, CARD_H)
+    card.AnchorPoint = Vector2.new(1, 1)
+    card.Position = UDim2.fromOffset(0, 0)
+    card.BackgroundColor3 = Theme.CardBg
+    card.GroupTransparency = 1
+    card.Parent = LoadingContainer
+    Instance.new("UICorner", card).CornerRadius = UDim.new(0, 10)
 
-    Instance.new("UICorner", toast).CornerRadius = UDim.new(0, 8)
+    local stroke = Instance.new("UIStroke")
+    stroke.Color = Theme.BorderColor
+    stroke.Thickness = 1
+    stroke.Parent = card
 
-    local toastStroke = Instance.new("UIStroke")
-    toastStroke.Color = Theme.BorderColor
-    toastStroke.Thickness = 1
-    toastStroke.Parent = toast
-
+    -- Spinner: ring diam + titik biru yang muter ngelilingin (di kiri kartu)
     local ring = Instance.new("Frame")
-    ring.Size = UDim2.fromOffset(22, 22)
-    ring.Position = UDim2.fromOffset(11, 11)
-    ring.AnchorPoint = Vector2.new(0.5, 0.5)
+    ring.Size = UDim2.fromOffset(26, 26)
+    ring.Position = UDim2.fromOffset(10, 17)
     ring.BackgroundTransparency = 1
-    ring.Parent = toast
+    ring.Parent = card
 
     local ringStroke = Instance.new("UIStroke")
     ringStroke.Color = Theme.ToggleOff
@@ -407,11 +455,10 @@ local function ShowLoadingToast(featureName)
     Instance.new("UICorner", ring).CornerRadius = UDim.new(1, 0)
 
     local pivot = Instance.new("Frame")
-    pivot.Size = UDim2.fromOffset(22, 22)
-    pivot.Position = UDim2.fromOffset(11, 11)
-    pivot.AnchorPoint = Vector2.new(0.5, 0.5)
+    pivot.Size = UDim2.fromOffset(26, 26)
+    pivot.Position = UDim2.fromOffset(10, 17)
     pivot.BackgroundTransparency = 1
-    pivot.Parent = toast
+    pivot.Parent = card
 
     local dot = Instance.new("Frame")
     dot.Size = UDim2.fromOffset(5, 5)
@@ -426,25 +473,191 @@ local function ShowLoadingToast(featureName)
     })
     spinTween:Play()
 
-    local label = Instance.new("TextLabel")
-    label.Text = "Mengaktifkan " .. featureName .. "..."
-    label.Font = Enum.Font.GothamBold
-    label.TextSize = 11
-    label.TextColor3 = Theme.TextPrimary
-    label.TextWrapped = true
-    label.TextXAlignment = Enum.TextXAlignment.Left
-    label.BackgroundTransparency = 1
-    label.Size = UDim2.new(1, -42, 1, -12)
-    label.Position = UDim2.fromOffset(34, 6)
-    label.Parent = toast
+    -- Konten teks + progress bar (di kanan spinner)
+    local featureText = Instance.new("TextLabel")
+    featureText.Font = Enum.Font.GothamBold
+    featureText.TextSize = 9
+    featureText.TextColor3 = Theme.TextPrimary
+    featureText.TextWrapped = true
+    featureText.TextXAlignment = Enum.TextXAlignment.Left
+    featureText.TextYAlignment = Enum.TextYAlignment.Top
+    featureText.BackgroundTransparency = 1
+    featureText.Size = UDim2.new(1, -56, 0, 18)
+    featureText.Position = UDim2.new(0, 46, 0, 7)
+    featureText.Text = LoadingTextMap[stateKey] or ("Initializing " .. displayName .. "...")
+    featureText.Parent = card
 
-    table.insert(activeToasts, toast)
-    ReflowToasts()
+    local subText = Instance.new("TextLabel")
+    subText.Font = Enum.Font.Gotham
+    subText.TextSize = 11
+    subText.TextColor3 = Theme.TextSecondary
+    subText.TextXAlignment = Enum.TextXAlignment.Left
+    subText.BackgroundTransparency = 1
+    subText.Size = UDim2.new(1, -56, 0, 14)
+    subText.Position = UDim2.new(0, 46, 1, -16)
+    subText.Text = "Please wait..."
+    subText.Parent = card
 
-    task.delay(1.5, function()
-        spinTween:Cancel()
-        RemoveToast(toast)
+    local track = Instance.new("Frame")
+    track.Size = UDim2.fromOffset(194, 5)
+    track.Position = UDim2.new(0, 46, 1, -26)
+    track.BackgroundColor3 = Theme.ToggleOff
+    track.BorderSizePixel = 0
+    track.Parent = card
+    Instance.new("UICorner", track).CornerRadius = UDim.new(1, 0)
+
+    local fill = Instance.new("Frame")
+    fill.Size = UDim2.new(0, 0, 1, 0)
+    fill.BackgroundColor3 = Theme.AccentBlue
+    fill.BorderSizePixel = 0
+    fill.Parent = track
+    Instance.new("UICorner", fill).CornerRadius = UDim.new(1, 0)
+
+    local percentLabel = Instance.new("TextLabel")
+    percentLabel.Font = Enum.Font.GothamBold
+    percentLabel.TextSize = 8
+    percentLabel.TextColor3 = Theme.TextSecondary
+    percentLabel.TextXAlignment = Enum.TextXAlignment.Right
+    percentLabel.BackgroundTransparency = 1
+    percentLabel.Size = UDim2.fromOffset(30, 12)
+    percentLabel.Position = UDim2.new(1, -36, 1, -27)
+    percentLabel.Text = "0%"
+    percentLabel.Parent = card
+
+    return {
+        frame = card,
+        spinTween = spinTween,
+        fill = fill,
+        percentLabel = percentLabel,
+        subText = subText,
+        featureText = featureText,
+    }
+end
+
+local function StartLoadingFeature(stateKey, displayName)
+    -- Anti-duplicate: kalau fitur ini udah punya kartu loading yang jalan, hentikan dulu yang lama
+    if activeLoadings[stateKey] then
+        RemoveLoadingCard(stateKey)
+    end
+
+    local entry = CreateLoadingCard(stateKey, displayName)
+    activeLoadings[stateKey] = entry
+    table.insert(loadingQueue, entry) -- masuk ke urutan paling baru (paling atas)
+    ReflowLoadingQueue()
+
+    TweenService:Create(entry.frame, TweenInfo.new(0.2), { GroupTransparency = 0 }):Play()
+
+    entry.token = (entry.token or 0) + 1
+    local myToken = entry.token
+
+    -- Durasi RANDOM 3-6 detik, beda tiap kali fitur diaktifkan (bukan angka tetap) -- TETAP DIPERTAHANKAN
+    local duration = math.random() * 3 + 3
+    local startTime = os.clock()
+
+    -- State buat efek "progress kayak download beneran" (kadang jeda, kadang lompat beberapa persen)
+    local displayedPct = 0
+    local nextTickAt = 0
+
+    -- B. VISUAL LOADING: progress dasarnya tetap dari elapsedTime / duration (jadi dijamin nyampe 100%
+    -- pas durasi random habis), tapi angka yang ditampilkan dibikin "ga rata" biar berasa kayak proses download
+    entry.conn = RunService.Heartbeat:Connect(function()
+        if entry.token ~= myToken or not activeLoadings[stateKey] then
+            if entry.conn then
+                entry.conn:Disconnect()
+                entry.conn = nil
+            end
+            return
+        end
+
+        local elapsed = os.clock() - startTime
+        local timeRatio = math.clamp(elapsed / duration, 0, 1)
+        local scheduledPct = math.floor(timeRatio * 100) -- batas atas "resmi" berdasarkan waktu (jamin nyampe 100%)
+        local now = os.clock()
+
+        if now >= nextTickAt and displayedPct < 100 then
+            -- lompatan kecil biasa, kadang burst naik lebih banyak sekaligus (ga selalu rata)
+            local step = math.random(1, 3)
+            if math.random() < 0.2 then
+                step = step + math.random(2, 6) -- efek "burst" sesekali
+            end
+
+            displayedPct = math.min(displayedPct + step, scheduledPct)
+
+            -- kalau waktu udah abis, paksa nyampe 100% (jangan sampai stuck di 95-99%)
+            if timeRatio >= 1 then
+                displayedPct = 100
+            end
+
+            -- jeda acak sebelum tick berikutnya, biar berasa kayak nunggu data/component berikutnya
+            local pause
+            if math.random() < 0.3 then
+                pause = math.random() * 0.4 + 0.15 -- jeda agak kerasa (0.15 - 0.55 detik)
+            else
+                pause = math.random() * 0.12 + 0.03 -- jeda kecil antar-tick (0.03 - 0.15 detik)
+            end
+            nextTickAt = now + pause
+        end
+
+        local pct = displayedPct / 100
+
+        entry.fill.Size = UDim2.new(pct, 0, 1, 0)
+        entry.percentLabel.Text = displayedPct .. "%"
+
+        -- Status text ikut berubah mengikuti progress (wording yang udah diperbaiki, tetap dipertahankan)
+        if pct < 0.25 then
+            entry.subText.Text = "Initializing..."
+        elseif pct < 0.5 then
+            entry.subText.Text = "Connecting..."
+        elseif pct < 0.75 then
+            entry.subText.Text = "Loading Components..."
+        elseif pct < 1 then
+            entry.subText.Text = "Finalizing..."
+        end
+
+        if displayedPct >= 100 then
+            entry.conn:Disconnect()
+            entry.conn = nil
+
+            -- Lepas dari loop Heartbeat dulu, baru proses hasil akhir di thread terpisah
+            task.spawn(function()
+                if entry.token ~= myToken or not activeLoadings[stateKey] then return end
+
+                -- A. REAL FEATURE INITIALIZATION (placeholder aman/dummy, terpisah dari visual loading)
+                -- Di sinilah nantinya logic fitur asli terhubung. Untuk saat ini sengaja dikosongkan.
+                local ok = pcall(function() end)
+
+                if entry.token ~= myToken or not activeLoadings[stateKey] then return end
+
+                if ok then
+                    local shortName = ActiveNameMap[stateKey] or displayName
+                    entry.featureText.Text = "\226\156\147 " .. shortName .. " Active" -- "✓ [Nama] Active"
+                    entry.subText.Text = FinalSubTextMap[stateKey] or "Ready"
+                    entry.subText.TextColor3 = Theme.AccentBlue
+                else
+                    entry.subText.Text = "\226\156\149 Failed" -- "✕ Failed"
+                    entry.subText.TextColor3 = Color3.fromRGB(255, 90, 90)
+                end
+
+                task.wait(0.7)
+                if entry.token ~= myToken or not activeLoadings[stateKey] then return end
+
+                entry.spinTween:Cancel()
+                RemoveLoadingCard(stateKey)
+            end)
+        end
     end)
+end
+
+local function CancelLoadingFeature(stateKey)
+    local entry = activeLoadings[stateKey]
+    if not entry then return end
+    entry.token = (entry.token or 0) + 1 -- token baru = loop lama otomatis berhenti
+    if entry.conn then
+        entry.conn:Disconnect()
+        entry.conn = nil
+    end
+    entry.spinTween:Cancel()
+    RemoveLoadingCard(stateKey)
 end
 
 local function CreateFeatureRow(layoutOrder, name, customIconName, stateKey)
@@ -508,16 +721,20 @@ local function CreateFeatureRow(layoutOrder, name, customIconName, stateKey)
         }):Play()
 
         if active then
-            ShowLoadingToast(name)
+            StartLoadingFeature(stateKey, name)
+        else
+            CancelLoadingFeature(stateKey)
         end
     end)
 end
 
+-- Render 4 Features
 CreateFeatureRow(1, "Lag Players", "Users", "LagPlayers")
 CreateFeatureRow(2, "Private Server", "Shield", "PrivateServer")
 CreateFeatureRow(3, "Auto Kick Other Players", "Prohibited", "AutoKickOtherPlayers")
-CreateFeatureRow(4, "Auto Stack Players\nOn Loading", "CircularArrows", "AutoStackPlayersOnLoading")
+CreateFeatureRow(4, "Auto Stack Players\non Loading", "CircularArrows", "AutoStackPlayersOnLoading")
 
+-- [ 9. INSTANT 1:1 DRAG ENGINE (HEADER ONLY, NO RESIZE) ]
 local isDragging = false
 local dragStartPos = Vector3.new()
 local startFramePos = UDim2.new()
@@ -558,6 +775,7 @@ UserInputService.InputEnded:Connect(function(input)
     end
 end)
 
+-- [ 10. FLOATING F TOGGLE BUTTON ]
 local FloatingBtn = Instance.new("TextButton")
 FloatingBtn.Name = "FloatingToggleBtn"
 FloatingBtn.Size = UDim2.fromOffset(52, 52)
@@ -621,6 +839,7 @@ end)
 
 local function ToggleMainUI(show)
     if show then
+        -- Buka kembali MainFrame dengan animasi pop-in (dari kecil ke normal)
         MainFrame.Size = UDim2.fromOffset(240, 230)
         MainFrame.Visible = true
         MainScale.Scale = 0
@@ -637,6 +856,7 @@ local function ToggleMainUI(show)
             FloatingBtn.Visible = false
         end)
     else
+        -- Tutup MainFrame dengan animasi pop-out, lalu munculkan tombol F dengan pop-in
         local closeTween = TweenService:Create(MainScale, TweenInfo.new(0.16, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {
             Scale = 0
         })
@@ -675,4 +895,136 @@ end)
 
 CreateHeaderButton("X", function()
     ToggleMainUI(false)
+end)
+
+-- [ 11. BOOT LOADING SCREEN (MUNCUL DULUAN SEBELUM UI HUB TAMPIL) ]
+local BootScreen = Instance.new("CanvasGroup")
+BootScreen.Name = "BootScreen"
+BootScreen.Size = UDim2.fromOffset(280, 130)
+BootScreen.AnchorPoint = Vector2.new(0.5, 0.5)
+BootScreen.Position = UDim2.fromScale(0.5, 0.5)
+BootScreen.BackgroundColor3 = Theme.Background
+BootScreen.GroupTransparency = 0
+BootScreen.ZIndex = 100
+BootScreen.Parent = ScreenGui
+
+local BootCorner = Instance.new("UICorner")
+BootCorner.CornerRadius = UDim.new(0, 12)
+BootCorner.Parent = BootScreen
+
+local BootStroke = Instance.new("UIStroke")
+BootStroke.Color = Theme.BorderColor
+BootStroke.Thickness = 1
+BootStroke.Parent = BootScreen
+
+-- Logo F gede di atas
+local BootLogo = CreateFLogo(UDim2.new(0, 30, 0, 30), -12)
+BootLogo.Position = UDim2.new(0.5, -15, 0, 16)
+BootLogo.Parent = BootScreen
+
+-- Spinner: ring diam + titik biru yang muter ngelilingin (versi gede)
+local BootRing = Instance.new("Frame")
+BootRing.Size = UDim2.fromOffset(0, 0)
+BootRing.BackgroundTransparency = 1
+BootRing.Parent = BootScreen
+
+local BootTitle = Instance.new("TextLabel")
+BootTitle.Font = Enum.Font.GothamBold
+BootTitle.TextSize = 16
+BootTitle.TextColor3 = Theme.TextPrimary
+BootTitle.BackgroundTransparency = 1
+BootTitle.Size = UDim2.new(1, -20, 0, 20)
+BootTitle.Position = UDim2.new(0, 10, 0, 54)
+BootTitle.RichText = true
+BootTitle.Text = "leon4951 <font color=\"rgb(37, 120, 255)\">Hub</font>"
+BootTitle.Parent = BootScreen
+
+local BootSubText = Instance.new("TextLabel")
+BootSubText.Font = Enum.Font.Gotham
+BootSubText.TextSize = 10
+BootSubText.TextColor3 = Theme.TextSecondary
+BootSubText.BackgroundTransparency = 1
+BootSubText.Size = UDim2.new(1, -20, 0, 14)
+BootSubText.Position = UDim2.new(0, 10, 0, 76)
+BootSubText.Text = "Loading..."
+BootSubText.Parent = BootScreen
+
+-- Progress bar gede
+local BootTrack = Instance.new("Frame")
+BootTrack.Size = UDim2.new(1, -40, 0, 8)
+BootTrack.Position = UDim2.new(0, 20, 1, -30)
+BootTrack.BackgroundColor3 = Theme.ToggleOff
+BootTrack.BorderSizePixel = 0
+BootTrack.Parent = BootScreen
+Instance.new("UICorner", BootTrack).CornerRadius = UDim.new(1, 0)
+
+local BootFill = Instance.new("Frame")
+BootFill.Size = UDim2.new(0, 0, 1, 0)
+BootFill.BackgroundColor3 = Theme.AccentBlue
+BootFill.BorderSizePixel = 0
+BootFill.Parent = BootTrack
+Instance.new("UICorner", BootFill).CornerRadius = UDim.new(1, 0)
+
+local BootPercentLabel = Instance.new("TextLabel")
+BootPercentLabel.Font = Enum.Font.GothamBold
+BootPercentLabel.TextSize = 11
+BootPercentLabel.TextColor3 = Theme.TextPrimary
+BootPercentLabel.BackgroundTransparency = 1
+BootPercentLabel.TextXAlignment = Enum.TextXAlignment.Right
+BootPercentLabel.Size = UDim2.new(1, -40, 0, 14)
+BootPercentLabel.Position = UDim2.new(0, 20, 1, -46)
+BootPercentLabel.Text = "0%"
+BootPercentLabel.Parent = BootScreen
+
+-- Jalanin boot loading, baru munculin UI hub setelah selesai
+-- Progress smooth berbasis waktu (elapsed/duration) via Heartbeat, status berubah berurutan
+local BootStatuses = {
+    { 0.00, "Initializing..." },
+    { 0.20, "Loading UI..." },
+    { 0.40, "Loading Components..." },
+    { 0.65, "Preparing Features..." },
+    { 0.85, "Finalizing..." },
+}
+
+local bootDuration = 2.6
+local bootStartTime = os.clock()
+local bootConn
+
+bootConn = RunService.Heartbeat:Connect(function()
+    local elapsed = os.clock() - bootStartTime
+    local pct = math.clamp(elapsed / bootDuration, 0, 1)
+
+    BootFill.Size = UDim2.new(pct, 0, 1, 0)
+    BootPercentLabel.Text = math.floor(pct * 100) .. "%"
+
+    for _, status in ipairs(BootStatuses) do
+        if pct >= status[1] then
+            BootSubText.Text = status[2]
+        end
+    end
+
+    if pct >= 1 then
+        bootConn:Disconnect()
+        bootConn = nil
+        BootSubText.Text = "\226\156\147 Ready" -- "✓ Ready"
+
+        task.spawn(function()
+            task.wait(0.6)
+
+            -- Boot loading kelar -> layar loading ilang, baru UI hub muncul
+            TweenService:Create(BootScreen, TweenInfo.new(0.25, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {
+                GroupTransparency = 1
+            }):Play()
+
+            task.delay(0.25, function()
+                BootScreen:Destroy()
+
+                MainFrame.Visible = true
+                MainScale.Scale = 0
+                TweenService:Create(MainScale, TweenInfo.new(0.25, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {
+                    Scale = 1
+                }):Play()
+            end)
+        end)
+    end
 end)
