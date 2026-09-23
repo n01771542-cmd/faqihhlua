@@ -1,7 +1,7 @@
 -- ============================================================================
 -- LOADER SYSTEM (AUTO EXECUTE FROM GITHUB)
 -- ============================================================================
-local RAW_SCRIPT_URL = "https://raw.githubusercontent.com/faqihhlua/PRIVATE-SERVER-VISUALS/main/main.lua"
+local RAW_SCRIPT_URL = "https://raw.githubusercontent.com/faqihhlua/n01771542-cmd/main/main.lua"
 
 -- Menjalankan fetch script jika dipanggil via Loader terpisah
 if not _G.LEON_HUB_LOADED then
@@ -21,11 +21,11 @@ end
 
 -- ============================================================================
 -- LEON4951 HUB - ANTI HIT
--- GitHub: faqihhlua / PRIVATE-SERVER-VISUALS
+-- GitHub: faqihhlua / n01771542-cmd
 -- File: main.lua
 --
 -- LOADSTRING EXECUTION:
--- loadstring(game:HttpGet("https://raw.githubusercontent.com/faqihhlua/PRIVATE-SERVER-VISUALS/main/main.lua"))()
+-- loadstring(game:HttpGet("https://raw.githubusercontent.com/faqihhlua/n01771542-cmd/main/main.lua"))()
 -- ============================================================================
 
 local CoreGui = game:GetService("CoreGui")
