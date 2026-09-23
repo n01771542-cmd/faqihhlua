@@ -1,1030 +1,1494 @@
 -- ============================================================================
--- LEON4951 HUB - STRICT FIXED MINI UI (240x230 EXPLICIT, DIKECILKAN)
+-- LEON4951 HUB - ANTI HIT
+-- PREMIUM UI + MINIMIZE/MORPH ANIMATION + DRAG SYSTEM
+--
+-- UPDATE:
+-- Toggle setelah minimize sekarang bergerak lebih dekat ke bagian paling atas.
+-- Posisi toggle: 15px dari atas layar.
+-- UI/fitur lainnya tetap dipertahankan.
 -- ============================================================================
 
--- [ PRE-INITIALIZATION CLEANUP ]
 local CoreGui = game:GetService("CoreGui")
 local Players = game:GetService("Players")
-local LocalPlayer = Players.LocalPlayer
-
-local function DestroyOldUI(name)
-    local old = CoreGui:FindFirstChild(name) or (LocalPlayer and LocalPlayer:FindFirstChild("PlayerGui") and LocalPlayer.PlayerGui:FindFirstChild(name))
-    if old then
-        pcall(function() old:Destroy() end)
-    end
-end
-
-DestroyOldUI("leon4951HubGui")
-
--- [ 1. SERVICES ]
+local ProximityPromptService = game:GetService("ProximityPromptService")
+local RunService = game:GetService("RunService")
 local TweenService = game:GetService("TweenService")
 local UserInputService = game:GetService("UserInputService")
-local RunService = game:GetService("RunService")
 
--- [ 2. CONFIGURATION & THEME ]
+local LocalPlayer = Players.LocalPlayer
+
+-- ============================================================================
+-- TARGET SAFE ZONE
+-- ============================================================================
+
+local TARGET_POS = Vector3.new(491, 70, -371)
+
+-- ============================================================================
+-- CLEANUP
+-- ============================================================================
+
+local GUI_NAME = "LeonHubGui"
+
+pcall(function()
+	local oldCore = CoreGui:FindFirstChild(GUI_NAME)
+	if oldCore then
+		oldCore:Destroy()
+	end
+end)
+
+pcall(function()
+	local playerGui = LocalPlayer:FindFirstChild("PlayerGui")
+	if playerGui then
+		local oldPlayer = playerGui:FindFirstChild(GUI_NAME)
+		if oldPlayer then
+			oldPlayer:Destroy()
+		end
+	end
+end)
+
+-- ============================================================================
+-- STATE
+-- ============================================================================
+
+local isAntiHitActive = false
+local isProcessing = false
+
+local IsMinimized = false
+local IsTransitioning = false
+
+-- ============================================================================
+-- THEME
+-- ============================================================================
+
 local Theme = {
-    Background = Color3.fromRGB(11, 14, 21),
-    CardBg = Color3.fromRGB(18, 23, 34),
-    TabActive = Color3.fromRGB(37, 120, 255),
-    TabInactive = Color3.fromRGB(18, 23, 34),
-    AccentBlue = Color3.fromRGB(37, 120, 255),
-    ToggleOff = Color3.fromRGB(48, 56, 74),
-    ToggleKnob = Color3.fromRGB(255, 255, 255),
-    TextPrimary = Color3.fromRGB(255, 255, 255),
-    TextSecondary = Color3.fromRGB(140, 155, 180),
-    BorderColor = Color3.fromRGB(28, 36, 52)
+	Background = Color3.fromRGB(7, 10, 17),
+	Background2 = Color3.fromRGB(10, 14, 23),
+
+	Card = Color3.fromRGB(14, 20, 32),
+	CardHover = Color3.fromRGB(20, 29, 46),
+
+	Accent = Color3.fromRGB(37, 120, 255),
+	AccentLight = Color3.fromRGB(82, 151, 255),
+
+	Text = Color3.fromRGB(245, 247, 255),
+	TextSecondary = Color3.fromRGB(151, 163, 186),
+	TextMuted = Color3.fromRGB(88, 100, 123),
+
+	Border = Color3.fromRGB(34, 48, 73),
+
+	Off = Color3.fromRGB(20, 27, 40),
+	OffStroke = Color3.fromRGB(50, 64, 88),
+
+	On = Color3.fromRGB(18, 48, 43),
+	OnStroke = Color3.fromRGB(46, 146, 116),
+
+	OnAccent = Color3.fromRGB(76, 220, 163),
 }
 
--- [ 3. FEATURE TOGGLE STATE (VISUAL ONLY) ]
-local Features = {
-    LagPlayers = false,
-    PrivateServer = false,
-    AutoKickOtherPlayers = false,
-    AutoStackPlayersOnLoading = false
-}
+-- ============================================================================
+-- TWEEN HELPER
+-- ============================================================================
 
--- [ 4. CREATE UI ROOT & FIXED MINI CONTAINER ]
+local function Tween(object, duration, properties, style, direction)
+	if not object or not object.Parent then
+		return
+	end
+
+	local info = TweenInfo.new(
+		duration or 0.2,
+		style or Enum.EasingStyle.Quart,
+		direction or Enum.EasingDirection.Out
+	)
+
+	local tween = TweenService:Create(object, info, properties)
+	tween:Play()
+
+	return tween
+end
+
+-- ============================================================================
+-- SCREEN GUI
+-- ============================================================================
+
 local ScreenGui = Instance.new("ScreenGui")
-ScreenGui.Name = "leon4951HubGui"
+ScreenGui.Name = GUI_NAME
 ScreenGui.ResetOnSpawn = false
 ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+ScreenGui.DisplayOrder = 999
 
-pcall(function() ScreenGui.Parent = CoreGui end)
-if not ScreenGui.Parent then ScreenGui.Parent = LocalPlayer:WaitForChild("PlayerGui") end
+local guiParented = false
 
--- Main Window Frame (EXPLICIT FIXED MINI: 340 x 330)
+pcall(function()
+	ScreenGui.Parent = CoreGui
+	guiParented = ScreenGui.Parent ~= nil
+end)
+
+if not guiParented then
+	pcall(function()
+		ScreenGui.Parent = LocalPlayer:WaitForChild("PlayerGui")
+		guiParented = ScreenGui.Parent ~= nil
+	end)
+end
+
+if not guiParented then
+	return
+end
+
+-- ============================================================================
+-- MAIN UI CONFIG
+-- ============================================================================
+
+local MAIN_WIDTH = 350
+local MAIN_HEIGHT = 190
+
+local MAIN_HOME_POSITION = UDim2.fromScale(0.20, 0.43)
+
+-- ============================================================================
+-- MAIN FRAME
+-- ============================================================================
+
 local MainFrame = Instance.new("Frame")
 MainFrame.Name = "MainFrame"
-MainFrame.Size = UDim2.fromOffset(240, 230)
+MainFrame.Size = UDim2.fromOffset(MAIN_WIDTH, MAIN_HEIGHT)
+MainFrame.Position = MAIN_HOME_POSITION
 MainFrame.AnchorPoint = Vector2.new(0.5, 0.5)
-MainFrame.Position = UDim2.fromScale(0.5, 0.5)
 MainFrame.BackgroundColor3 = Theme.Background
 MainFrame.BorderSizePixel = 0
-MainFrame.ClipsDescendants = false
 MainFrame.Active = true
-MainFrame.Visible = false
+MainFrame.ClipsDescendants = true
 MainFrame.Parent = ScreenGui
 
 local MainCorner = Instance.new("UICorner")
-MainCorner.CornerRadius = UDim.new(0, 7)
+MainCorner.CornerRadius = UDim.new(0, 20)
 MainCorner.Parent = MainFrame
 
 local MainStroke = Instance.new("UIStroke")
-MainStroke.Color = Theme.BorderColor
-MainStroke.Thickness = 1
+MainStroke.Name = "MainStroke"
+MainStroke.Color = Theme.Border
+MainStroke.Thickness = 1.5
+MainStroke.Transparency = 0.08
 MainStroke.Parent = MainFrame
 
-local MainScale = Instance.new("UIScale")
-MainScale.Scale = 0
-MainScale.Parent = MainFrame
+-- ============================================================================
+-- BACKGROUND GRADIENT
+-- ============================================================================
 
--- [ 5. HELPER FUNCTIONS FOR VECTOR GUI ICONS ]
-local function CreateFLogo(size, rotation)
-    local container = Instance.new("Frame")
-    container.Size = size
-    container.BackgroundTransparency = 1
-    container.Rotation = rotation or -12
+local BackgroundGradient = Instance.new("UIGradient")
+BackgroundGradient.Rotation = 135
+BackgroundGradient.Color = ColorSequence.new({
+	ColorSequenceKeypoint.new(0, Color3.fromRGB(9, 13, 22)),
+	ColorSequenceKeypoint.new(0.5, Color3.fromRGB(8, 12, 20)),
+	ColorSequenceKeypoint.new(1, Color3.fromRGB(13, 20, 34))
+})
+BackgroundGradient.Parent = MainFrame
 
-    local topBar = Instance.new("Frame")
-    topBar.Size = UDim2.new(1, 0, 0, math.floor(size.Y.Offset * 0.28))
-    topBar.Position = UDim2.new(0, 0, 0, 0)
-    topBar.BackgroundColor3 = Theme.AccentBlue
-    topBar.BorderSizePixel = 0
-    topBar.Parent = container
-    Instance.new("UICorner", topBar).CornerRadius = UDim.new(0, 2)
+-- ============================================================================
+-- SOFT TOP ACCENT
+-- ============================================================================
 
-    local midBar = Instance.new("Frame")
-    midBar.Size = UDim2.new(0.68, 0, 0, math.floor(size.Y.Offset * 0.24))
-    midBar.Position = UDim2.new(0.2, 0, 0.4, 0)
-    midBar.BackgroundColor3 = Theme.AccentBlue
-    midBar.BorderSizePixel = 0
-    midBar.Parent = container
-    Instance.new("UICorner", midBar).CornerRadius = UDim.new(0, 2)
+local TopAccent = Instance.new("Frame")
+TopAccent.Name = "TopAccent"
+TopAccent.Size = UDim2.new(0, 90, 0, 3)
+TopAccent.Position = UDim2.new(0.5, -45, 0, 0)
+TopAccent.BackgroundColor3 = Theme.Accent
+TopAccent.BorderSizePixel = 0
+TopAccent.ZIndex = 5
+TopAccent.Parent = MainFrame
 
-    local stem = Instance.new("Frame")
-    stem.Size = UDim2.new(0, math.floor(size.X.Offset * 0.28), 1, 0)
-    stem.Position = UDim2.new(0.08, 0, 0, 0)
-    stem.BackgroundColor3 = Theme.AccentBlue
-    stem.BorderSizePixel = 0
-    stem.Parent = container
-    Instance.new("UICorner", stem).CornerRadius = UDim.new(0, 2)
+local TopAccentCorner = Instance.new("UICorner")
+TopAccentCorner.CornerRadius = UDim.new(1, 0)
+TopAccentCorner.Parent = TopAccent
 
-    return container
-end
+-- ============================================================================
+-- HEADER
+-- ============================================================================
 
-local function CustomDrawIcon(iconType, parent)
-    local container = Instance.new("Frame")
-    container.Size = UDim2.fromOffset(22, 22)
-    container.Position = UDim2.new(0, 10, 0.5, -11)
-    container.BackgroundTransparency = 1
-    container.Parent = parent
-
-    if iconType == "Users" then
-        local head = Instance.new("Frame")
-        head.Size = UDim2.fromOffset(6, 6)
-        head.Position = UDim2.fromOffset(6, 1)
-        head.BackgroundColor3 = Theme.TextPrimary
-        head.BorderSizePixel = 0
-        head.Parent = container
-        Instance.new("UICorner", head).CornerRadius = UDim.new(1, 0)
-        
-        local body = Instance.new("Frame")
-        body.Size = UDim2.fromOffset(11, 6)
-        body.Position = UDim2.fromOffset(3, 8)
-        body.BackgroundColor3 = Theme.TextPrimary
-        body.BorderSizePixel = 0
-        body.Parent = container
-        Instance.new("UICorner", body).CornerRadius = UDim.new(0, 4)
-        
-    elseif iconType == "Shield" then
-        -- Ikon server rack (3 bar bertumpuk) biar nyambung sama "Private Server"
-        for i = 0, 2 do
-            local bar = Instance.new("Frame")
-            bar.Size = UDim2.fromOffset(16, 4)
-            bar.Position = UDim2.fromOffset(3, 2 + i * 6)
-            bar.BackgroundColor3 = Theme.TextPrimary
-            bar.BorderSizePixel = 0
-            bar.Parent = container
-            Instance.new("UICorner", bar).CornerRadius = UDim.new(0, 1)
-
-            local dot = Instance.new("Frame")
-            dot.Size = UDim2.fromOffset(2, 2)
-            dot.Position = UDim2.fromOffset(15, 3 + i * 6)
-            dot.BackgroundColor3 = Theme.CardBg
-            dot.BorderSizePixel = 0
-            dot.Parent = container
-            Instance.new("UICorner", dot).CornerRadius = UDim.new(1, 0)
-        end
-
-    elseif iconType == "Prohibited" then
-        local circle = Instance.new("Frame")
-        circle.Size = UDim2.fromOffset(13, 13)
-        circle.Position = UDim2.fromOffset(2, 2)
-        circle.BackgroundTransparency = 1
-        circle.Parent = container
-        
-        local stroke = Instance.new("UIStroke")
-        stroke.Color = Theme.TextPrimary
-        stroke.Thickness = 1.5
-        stroke.Parent = circle
-        Instance.new("UICorner", circle).CornerRadius = UDim.new(1, 0)
-
-        local bar = Instance.new("Frame")
-        bar.Size = UDim2.new(1, 0, 0, 1.5)
-        bar.Position = UDim2.new(0, 0, 0.5, -1)
-        bar.BackgroundColor3 = Theme.TextPrimary
-        bar.BorderSizePixel = 0
-        bar.Rotation = -45
-        bar.Parent = circle
-
-    elseif iconType == "CircularArrows" then
-        local circle = Instance.new("Frame")
-        circle.Size = UDim2.fromOffset(11, 11)
-        circle.Position = UDim2.fromOffset(3, 3)
-        circle.BackgroundTransparency = 1
-        circle.Parent = container
-        
-        local stroke = Instance.new("UIStroke")
-        stroke.Color = Theme.TextPrimary
-        stroke.Thickness = 1.5
-        stroke.Parent = circle
-        Instance.new("UICorner", circle).CornerRadius = UDim.new(1, 0)
-
-        local mask = Instance.new("Frame")
-        mask.Size = UDim2.fromOffset(6, 6)
-        mask.Position = UDim2.fromOffset(6, 0)
-        mask.BackgroundColor3 = Theme.CardBg
-        mask.BorderSizePixel = 0
-        mask.Parent = circle
-
-        local arrowTip = Instance.new("Frame")
-        arrowTip.Size = UDim2.fromOffset(4, 4)
-        arrowTip.Position = UDim2.fromOffset(7, 1)
-        arrowTip.BackgroundColor3 = Theme.TextPrimary
-        arrowTip.Rotation = 45
-        arrowTip.BorderSizePixel = 0
-        arrowTip.Parent = circle
-    end
-end
-
--- [ 6. HEADER SYSTEM ]
 local Header = Instance.new("Frame")
 Header.Name = "Header"
-Header.Size = UDim2.new(1, 0, 0, 30)
+Header.Size = UDim2.new(1, 0, 0, 67)
 Header.BackgroundTransparency = 1
 Header.Active = true
+Header.ZIndex = 10
 Header.Parent = MainFrame
 
-local LogoF = CreateFLogo(UDim2.new(0, 11, 0, 11), -12)
-LogoF.Position = UDim2.new(0, 10, 0.5, -6)
-LogoF.Parent = Header
+-- ============================================================================
+-- CUSTOM F LOGO
+-- ============================================================================
+
+local LogoHolder = Instance.new("Frame")
+LogoHolder.Name = "LogoHolder"
+LogoHolder.Size = UDim2.fromOffset(42, 42)
+LogoHolder.Position = UDim2.fromOffset(15, 12)
+LogoHolder.BackgroundColor3 = Color3.fromRGB(10, 18, 32)
+LogoHolder.BorderSizePixel = 0
+LogoHolder.ZIndex = 11
+LogoHolder.Parent = Header
+
+local LogoCorner = Instance.new("UICorner")
+LogoCorner.CornerRadius = UDim.new(0, 12)
+LogoCorner.Parent = LogoHolder
+
+local LogoStroke = Instance.new("UIStroke")
+LogoStroke.Color = Theme.Accent
+LogoStroke.Thickness = 1
+LogoStroke.Transparency = 0.35
+LogoStroke.Parent = LogoHolder
+
+local FVertical = Instance.new("Frame")
+FVertical.Size = UDim2.fromOffset(7, 27)
+FVertical.Position = UDim2.fromOffset(12, 8)
+FVertical.BackgroundColor3 = Theme.Accent
+FVertical.BorderSizePixel = 0
+FVertical.Rotation = -7
+FVertical.ZIndex = 12
+FVertical.Parent = LogoHolder
+
+local FTop = Instance.new("Frame")
+FTop.Size = UDim2.fromOffset(20, 7)
+FTop.Position = UDim2.fromOffset(16, 7)
+FTop.BackgroundColor3 = Theme.Accent
+FTop.BorderSizePixel = 0
+FTop.Rotation = -7
+FTop.ZIndex = 12
+FTop.Parent = LogoHolder
+
+local FMiddle = Instance.new("Frame")
+FMiddle.Size = UDim2.fromOffset(15, 6)
+FMiddle.Position = UDim2.fromOffset(15, 18)
+FMiddle.BackgroundColor3 = Theme.AccentLight
+FMiddle.BorderSizePixel = 0
+FMiddle.Rotation = -7
+FMiddle.ZIndex = 12
+FMiddle.Parent = LogoHolder
+
+-- ============================================================================
+-- TITLE
+-- ============================================================================
 
 local Title = Instance.new("TextLabel")
 Title.Name = "Title"
-Title.Size = UDim2.new(0, 230, 1, 0)
-Title.Position = UDim2.new(0, 25, 0, 0)
+Title.Size = UDim2.new(1, -125, 0, 24)
+Title.Position = UDim2.fromOffset(69, 11)
 Title.BackgroundTransparency = 1
-Title.Font = Enum.Font.GothamBold
-Title.TextSize = 14
-Title.TextColor3 = Theme.TextPrimary
-Title.TextXAlignment = Enum.TextXAlignment.Left
 Title.RichText = true
-Title.Text = "leon4951 <font color=\"rgb(140, 155, 180)\">/</font> <font color=\"rgb(37, 120, 255)\">Private Server</font>"
+Title.Text = 'leon4951 <font color="rgb(65,135,255)">Hub</font>'
+Title.TextColor3 = Theme.Text
+Title.Font = Enum.Font.GothamBold
+Title.TextSize = 17
+Title.TextXAlignment = Enum.TextXAlignment.Left
+Title.TextYAlignment = Enum.TextYAlignment.Center
+Title.ZIndex = 11
 Title.Parent = Header
 
-local ControlContainer = Instance.new("Frame")
-ControlContainer.Size = UDim2.new(0, 56, 1, 0)
-ControlContainer.Position = UDim2.new(1, -62, 0, 0)
-ControlContainer.BackgroundTransparency = 1
-ControlContainer.ZIndex = 5
-ControlContainer.Parent = Header
-
-local ControlLayout = Instance.new("UIListLayout")
-ControlLayout.FillDirection = Enum.FillDirection.Horizontal
-ControlLayout.HorizontalAlignment = Enum.HorizontalAlignment.Right
-ControlLayout.VerticalAlignment = Enum.VerticalAlignment.Center
-ControlLayout.Padding = UDim.new(0, 6)
-ControlLayout.Parent = ControlContainer
-
-local function CreateHeaderButton(iconText, callback)
-    local btn = Instance.new("TextButton")
-    btn.Size = UDim2.new(0, 24, 0, 24)
-    btn.BackgroundColor3 = Theme.CardBg
-    btn.BackgroundTransparency = 0
-    btn.Text = iconText
-    btn.Font = Enum.Font.GothamBold
-    btn.TextSize = 15
-    btn.TextColor3 = Theme.TextPrimary
-    btn.AutoButtonColor = false
-    Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 6)
-    btn.ZIndex = 6
-    btn.Parent = ControlContainer
-    
-    btn.MouseEnter:Connect(function()
-        TweenService:Create(btn, TweenInfo.new(0.15), { BackgroundColor3 = Theme.AccentBlue }):Play()
-    end)
-    btn.MouseLeave:Connect(function()
-        TweenService:Create(btn, TweenInfo.new(0.15), { BackgroundColor3 = Theme.CardBg }):Play()
-    end)
-    
-    btn.MouseButton1Click:Connect(callback)
-    return btn
-end
-
--- [ 7. NAVIGATION BAR ]
-local NavContainer = Instance.new("Frame")
-NavContainer.Name = "NavContainer"
-NavContainer.Size = UDim2.new(1, -20, 0, 20)
-NavContainer.Position = UDim2.new(0, 10, 0, 32)
-NavContainer.BackgroundColor3 = Theme.TabInactive
-NavContainer.Parent = MainFrame
-
-local NavCorner = Instance.new("UICorner")
-NavCorner.CornerRadius = UDim.new(0, 4)
-NavCorner.Parent = NavContainer
-
-local PSTabBtn = Instance.new("Frame")
-PSTabBtn.Size = UDim2.new(0, 88, 1, 0)
-PSTabBtn.BackgroundColor3 = Theme.TabActive
-PSTabBtn.Parent = NavContainer
-
-local PSTabCorner = Instance.new("UICorner")
-PSTabCorner.CornerRadius = UDim.new(0, 4)
-PSTabCorner.Parent = PSTabBtn
-
-local TabIcon = Instance.new("ImageLabel")
-TabIcon.Size = UDim2.new(0, 10, 0, 10)
-TabIcon.Position = UDim2.new(0, 6, 0.5, -5)
-TabIcon.BackgroundTransparency = 1
-TabIcon.Image = "rbxassetid://10723415903"
-TabIcon.ImageColor3 = Theme.TextPrimary
-TabIcon.Parent = PSTabBtn
-
-local TabLabel = Instance.new("TextLabel")
-TabLabel.Text = "PRIVATE SERVER"
-TabLabel.Font = Enum.Font.GothamBold
-TabLabel.TextSize = 8
-TabLabel.TextColor3 = Theme.TextPrimary
-TabLabel.Size = UDim2.new(1, -18, 1, 0)
-TabLabel.Position = UDim2.new(0, 18, 0, 0)
-TabLabel.BackgroundTransparency = 1
-TabLabel.TextXAlignment = Enum.TextXAlignment.Left
-TabLabel.Parent = PSTabBtn
-
-local Underline = Instance.new("Frame")
-Underline.Size = UDim2.new(1, -20, 0, 1)
-Underline.Position = UDim2.new(0, 10, 0, 53)
-Underline.BackgroundColor3 = Theme.TabInactive
-Underline.BorderSizePixel = 0
-Underline.Parent = MainFrame
-
-local ActiveLine = Instance.new("Frame")
-ActiveLine.Size = UDim2.new(0, 88, 1, 0)
-ActiveLine.BackgroundColor3 = Theme.AccentBlue
-ActiveLine.BorderSizePixel = 0
-ActiveLine.Parent = Underline
-
--- [ 8. SCROLLABLE FEATURE AREA (FITS 4 CARDS WITH SCROLL) ]
-local FeatureScrollingFrame = Instance.new("ScrollingFrame")
-FeatureScrollingFrame.Name = "FeatureScrollingFrame"
-FeatureScrollingFrame.Size = UDim2.new(1, -20, 1, -58)
-FeatureScrollingFrame.Position = UDim2.new(0, 10, 0, 56)
-FeatureScrollingFrame.BackgroundTransparency = 1
-FeatureScrollingFrame.BorderSizePixel = 0
-FeatureScrollingFrame.ScrollingEnabled = true
-FeatureScrollingFrame.Active = true
-FeatureScrollingFrame.ScrollBarThickness = 3
-FeatureScrollingFrame.ScrollBarImageColor3 = Theme.AccentBlue
-FeatureScrollingFrame.ScrollBarImageTransparency = 0.3
-FeatureScrollingFrame.CanvasSize = UDim2.new(0, 0, 0, 0)
-FeatureScrollingFrame.AutomaticCanvasSize = Enum.AutomaticSize.Y
-FeatureScrollingFrame.Parent = MainFrame
-
-local ListLayout = Instance.new("UIListLayout")
-ListLayout.SortOrder = Enum.SortOrder.LayoutOrder
-ListLayout.Padding = UDim.new(0, 6)
-ListLayout.Parent = FeatureScrollingFrame
-
-local UIPadding = Instance.new("UIPadding")
-UIPadding.PaddingTop = UDim.new(0, 1)
-UIPadding.PaddingBottom = UDim.new(0, 4)
-UIPadding.PaddingRight = UDim.new(0, 2)
-UIPadding.Parent = FeatureScrollingFrame
-
--- [ SISTEM ANTRIAN LOADING (BERTUMPUK, KARTU LONJONG DI KANAN LAYAR) ]
-local LoadingContainer = Instance.new("Frame")
-LoadingContainer.Name = "LoadingContainer"
-LoadingContainer.Size = UDim2.fromOffset(0, 0)
-LoadingContainer.AnchorPoint = Vector2.new(1, 1)
-LoadingContainer.Position = UDim2.new(1, -16, 1, -100)
-LoadingContainer.BackgroundTransparency = 1
-LoadingContainer.Parent = ScreenGui
-
-local CARD_W, CARD_H, CARD_GAP = 280, 60, 8
-
--- Teks loading per fitur (dummy, cuma visual)
-local LoadingTextMap = {
-    LagPlayers = "Activating Lag Players...",
-    PrivateServer = "Activating Private Server...",
-    AutoKickOtherPlayers = "Activating Auto Kick...",
-    AutoStackPlayersOnLoading = "Activating Auto Stack..."
-}
-
--- Nama pendek buat teks "✓ [Nama] Active" pas loading selesai
-local ActiveNameMap = {
-    LagPlayers = "Lag Players",
-    PrivateServer = "Private Server",
-    AutoKickOtherPlayers = "Auto Kick",
-    AutoStackPlayersOnLoading = "Auto Stack"
-}
-
--- Subtext final per fitur pas status jadi "Active" (bukan cuma "Ready" generik semua)
-local FinalSubTextMap = {
-    LagPlayers = "System Ready",
-    PrivateServer = "Ready",
-    AutoKickOtherPlayers = "Protection Enabled",
-    AutoStackPlayersOnLoading = "System Ready"
-}
-
-local loadingQueue = {} -- urutan lama -> baru; index 1 = paling bawah (paling lama)
-local activeLoadings = {} -- stateKey -> { frame = ..., token = ... }
-
-local function ReflowLoadingQueue()
-    for i, entry in ipairs(loadingQueue) do
-        local targetY = -((i - 1) * (CARD_H + CARD_GAP))
-        TweenService:Create(entry.frame, TweenInfo.new(0.25, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
-            Position = UDim2.fromOffset(0, targetY)
-        }):Play()
-    end
-end
-
-local function RemoveLoadingCard(stateKey)
-    local entry = activeLoadings[stateKey]
-    if not entry then return end
-
-    if entry.conn then
-        entry.conn:Disconnect()
-        entry.conn = nil
-    end
-
-    activeLoadings[stateKey] = nil
-    for i, q in ipairs(loadingQueue) do
-        if q == entry then
-            table.remove(loadingQueue, i)
-            break
-        end
-    end
-
-    TweenService:Create(entry.frame, TweenInfo.new(0.2, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {
-        GroupTransparency = 1
-    }):Play()
-
-    task.delay(0.2, function()
-        entry.frame:Destroy()
-    end)
-
-    ReflowLoadingQueue()
-end
-
-local function CreateLoadingCard(stateKey, displayName)
-    local card = Instance.new("CanvasGroup")
-    card.Size = UDim2.fromOffset(CARD_W, CARD_H)
-    card.AnchorPoint = Vector2.new(1, 1)
-    card.Position = UDim2.fromOffset(0, 0)
-    card.BackgroundColor3 = Theme.CardBg
-    card.GroupTransparency = 1
-    card.Parent = LoadingContainer
-    Instance.new("UICorner", card).CornerRadius = UDim.new(0, 10)
-
-    local stroke = Instance.new("UIStroke")
-    stroke.Color = Theme.BorderColor
-    stroke.Thickness = 1
-    stroke.Parent = card
-
-    -- Spinner: ring diam + titik biru yang muter ngelilingin (di kiri kartu)
-    local ring = Instance.new("Frame")
-    ring.Size = UDim2.fromOffset(26, 26)
-    ring.Position = UDim2.fromOffset(10, 17)
-    ring.BackgroundTransparency = 1
-    ring.Parent = card
-
-    local ringStroke = Instance.new("UIStroke")
-    ringStroke.Color = Theme.ToggleOff
-    ringStroke.Thickness = 2
-    ringStroke.Parent = ring
-    Instance.new("UICorner", ring).CornerRadius = UDim.new(1, 0)
-
-    local pivot = Instance.new("Frame")
-    pivot.Size = UDim2.fromOffset(26, 26)
-    pivot.Position = UDim2.fromOffset(10, 17)
-    pivot.BackgroundTransparency = 1
-    pivot.Parent = card
-
-    local dot = Instance.new("Frame")
-    dot.Size = UDim2.fromOffset(5, 5)
-    dot.Position = UDim2.new(0.5, -2.5, 0, -2.5)
-    dot.BackgroundColor3 = Theme.AccentBlue
-    dot.BorderSizePixel = 0
-    dot.Parent = pivot
-    Instance.new("UICorner", dot).CornerRadius = UDim.new(1, 0)
-
-    local spinTween = TweenService:Create(pivot, TweenInfo.new(0.8, Enum.EasingStyle.Linear, Enum.EasingDirection.InOut, -1, false), {
-        Rotation = 360
-    })
-    spinTween:Play()
-
-    -- Konten teks + progress bar (di kanan spinner)
-    local featureText = Instance.new("TextLabel")
-    featureText.Font = Enum.Font.GothamBold
-    featureText.TextSize = 9
-    featureText.TextColor3 = Theme.TextPrimary
-    featureText.TextWrapped = true
-    featureText.TextXAlignment = Enum.TextXAlignment.Left
-    featureText.TextYAlignment = Enum.TextYAlignment.Top
-    featureText.BackgroundTransparency = 1
-    featureText.Size = UDim2.new(1, -56, 0, 18)
-    featureText.Position = UDim2.new(0, 46, 0, 7)
-    featureText.Text = LoadingTextMap[stateKey] or ("Initializing " .. displayName .. "...")
-    featureText.Parent = card
-
-    local subText = Instance.new("TextLabel")
-    subText.Font = Enum.Font.Gotham
-    subText.TextSize = 11
-    subText.TextColor3 = Theme.TextSecondary
-    subText.TextXAlignment = Enum.TextXAlignment.Left
-    subText.BackgroundTransparency = 1
-    subText.Size = UDim2.new(1, -56, 0, 14)
-    subText.Position = UDim2.new(0, 46, 1, -16)
-    subText.Text = "Please wait..."
-    subText.Parent = card
-
-    local track = Instance.new("Frame")
-    track.Size = UDim2.fromOffset(194, 5)
-    track.Position = UDim2.new(0, 46, 1, -26)
-    track.BackgroundColor3 = Theme.ToggleOff
-    track.BorderSizePixel = 0
-    track.Parent = card
-    Instance.new("UICorner", track).CornerRadius = UDim.new(1, 0)
-
-    local fill = Instance.new("Frame")
-    fill.Size = UDim2.new(0, 0, 1, 0)
-    fill.BackgroundColor3 = Theme.AccentBlue
-    fill.BorderSizePixel = 0
-    fill.Parent = track
-    Instance.new("UICorner", fill).CornerRadius = UDim.new(1, 0)
-
-    local percentLabel = Instance.new("TextLabel")
-    percentLabel.Font = Enum.Font.GothamBold
-    percentLabel.TextSize = 8
-    percentLabel.TextColor3 = Theme.TextSecondary
-    percentLabel.TextXAlignment = Enum.TextXAlignment.Right
-    percentLabel.BackgroundTransparency = 1
-    percentLabel.Size = UDim2.fromOffset(30, 12)
-    percentLabel.Position = UDim2.new(1, -36, 1, -27)
-    percentLabel.Text = "0%"
-    percentLabel.Parent = card
-
-    return {
-        frame = card,
-        spinTween = spinTween,
-        fill = fill,
-        percentLabel = percentLabel,
-        subText = subText,
-        featureText = featureText,
-    }
-end
-
-local function StartLoadingFeature(stateKey, displayName)
-    -- Anti-duplicate: kalau fitur ini udah punya kartu loading yang jalan, hentikan dulu yang lama
-    if activeLoadings[stateKey] then
-        RemoveLoadingCard(stateKey)
-    end
-
-    local entry = CreateLoadingCard(stateKey, displayName)
-    activeLoadings[stateKey] = entry
-    table.insert(loadingQueue, entry) -- masuk ke urutan paling baru (paling atas)
-    ReflowLoadingQueue()
-
-    TweenService:Create(entry.frame, TweenInfo.new(0.2), { GroupTransparency = 0 }):Play()
-
-    entry.token = (entry.token or 0) + 1
-    local myToken = entry.token
-
-    -- Durasi RANDOM 3-6 detik, beda tiap kali fitur diaktifkan (bukan angka tetap) -- TETAP DIPERTAHANKAN
-    local duration = math.random() * 3 + 3
-    local startTime = os.clock()
-
-    -- State buat efek "progress kayak download beneran" (kadang jeda, kadang lompat beberapa persen)
-    local displayedPct = 0
-    local nextTickAt = 0
-
-    -- B. VISUAL LOADING: progress dasarnya tetap dari elapsedTime / duration (jadi dijamin nyampe 100%
-    -- pas durasi random habis), tapi angka yang ditampilkan dibikin "ga rata" biar berasa kayak proses download
-    entry.conn = RunService.Heartbeat:Connect(function()
-        if entry.token ~= myToken or not activeLoadings[stateKey] then
-            if entry.conn then
-                entry.conn:Disconnect()
-                entry.conn = nil
-            end
-            return
-        end
-
-        local elapsed = os.clock() - startTime
-        local timeRatio = math.clamp(elapsed / duration, 0, 1)
-        local scheduledPct = math.floor(timeRatio * 100) -- batas atas "resmi" berdasarkan waktu (jamin nyampe 100%)
-        local now = os.clock()
-
-        if now >= nextTickAt and displayedPct < 100 then
-            -- lompatan kecil biasa, kadang burst naik lebih banyak sekaligus (ga selalu rata)
-            local step = math.random(1, 3)
-            if math.random() < 0.2 then
-                step = step + math.random(2, 6) -- efek "burst" sesekali
-            end
-
-            displayedPct = math.min(displayedPct + step, scheduledPct)
-
-            -- kalau waktu udah abis, paksa nyampe 100% (jangan sampai stuck di 95-99%)
-            if timeRatio >= 1 then
-                displayedPct = 100
-            end
-
-            -- jeda acak sebelum tick berikutnya, biar berasa kayak nunggu data/component berikutnya
-            local pause
-            if math.random() < 0.3 then
-                pause = math.random() * 0.4 + 0.15 -- jeda agak kerasa (0.15 - 0.55 detik)
-            else
-                pause = math.random() * 0.12 + 0.03 -- jeda kecil antar-tick (0.03 - 0.15 detik)
-            end
-            nextTickAt = now + pause
-        end
-
-        local pct = displayedPct / 100
-
-        entry.fill.Size = UDim2.new(pct, 0, 1, 0)
-        entry.percentLabel.Text = displayedPct .. "%"
-
-        -- Status text ikut berubah mengikuti progress (wording yang udah diperbaiki, tetap dipertahankan)
-        if pct < 0.25 then
-            entry.subText.Text = "Initializing..."
-        elseif pct < 0.5 then
-            entry.subText.Text = "Connecting..."
-        elseif pct < 0.75 then
-            entry.subText.Text = "Loading Components..."
-        elseif pct < 1 then
-            entry.subText.Text = "Finalizing..."
-        end
-
-        if displayedPct >= 100 then
-            entry.conn:Disconnect()
-            entry.conn = nil
-
-            -- Lepas dari loop Heartbeat dulu, baru proses hasil akhir di thread terpisah
-            task.spawn(function()
-                if entry.token ~= myToken or not activeLoadings[stateKey] then return end
-
-                -- A. REAL FEATURE INITIALIZATION (placeholder aman/dummy, terpisah dari visual loading)
-                -- Di sinilah nantinya logic fitur asli terhubung. Untuk saat ini sengaja dikosongkan.
-                local ok = pcall(function() end)
-
-                if entry.token ~= myToken or not activeLoadings[stateKey] then return end
-
-                if ok then
-                    local shortName = ActiveNameMap[stateKey] or displayName
-                    entry.featureText.Text = "\226\156\147 " .. shortName .. " Active" -- "✓ [Nama] Active"
-                    entry.subText.Text = FinalSubTextMap[stateKey] or "Ready"
-                    entry.subText.TextColor3 = Theme.AccentBlue
-                else
-                    entry.subText.Text = "\226\156\149 Failed" -- "✕ Failed"
-                    entry.subText.TextColor3 = Color3.fromRGB(255, 90, 90)
-                end
-
-                task.wait(0.7)
-                if entry.token ~= myToken or not activeLoadings[stateKey] then return end
-
-                entry.spinTween:Cancel()
-                RemoveLoadingCard(stateKey)
-            end)
-        end
-    end)
-end
-
-local function CancelLoadingFeature(stateKey)
-    local entry = activeLoadings[stateKey]
-    if not entry then return end
-    entry.token = (entry.token or 0) + 1 -- token baru = loop lama otomatis berhenti
-    if entry.conn then
-        entry.conn:Disconnect()
-        entry.conn = nil
-    end
-    entry.spinTween:Cancel()
-    RemoveLoadingCard(stateKey)
-end
-
-local function CreateFeatureRow(layoutOrder, name, customIconName, stateKey)
-    local card = Instance.new("Frame")
-    card.Name = "Card_" .. stateKey
-    card.Size = UDim2.new(1, 0, 0, 50)
-    card.BackgroundColor3 = Theme.CardBg
-    card.LayoutOrder = layoutOrder
-    card.Parent = FeatureScrollingFrame
-    
-    local cardCorner = Instance.new("UICorner")
-    cardCorner.CornerRadius = UDim.new(0, 8)
-    cardCorner.Parent = card
-    
-    CustomDrawIcon(customIconName, card)
-    
-    local label = Instance.new("TextLabel")
-    label.Text = name
-    label.Font = Enum.Font.GothamBold
-    label.TextSize = 13
-    label.TextColor3 = Theme.TextPrimary
-    label.Size = UDim2.new(0.58, 0, 1, 0)
-    label.Position = UDim2.new(0, 38, 0, 0)
-    label.BackgroundTransparency = 1
-    label.TextXAlignment = Enum.TextXAlignment.Left
-    label.TextWrapped = true
-    label.Parent = card
-    
-    local toggleBtn = Instance.new("TextButton")
-    toggleBtn.Size = UDim2.fromOffset(46, 26)
-    toggleBtn.Position = UDim2.new(1, -52, 0.5, -13)
-    toggleBtn.BackgroundColor3 = Features[stateKey] and Theme.AccentBlue or Theme.ToggleOff
-    toggleBtn.Text = ""
-    toggleBtn.AutoButtonColor = false
-    toggleBtn.Parent = card
-    
-    local toggleCorner = Instance.new("UICorner")
-    toggleCorner.CornerRadius = UDim.new(1, 0)
-    toggleCorner.Parent = toggleBtn
-    
-    local knob = Instance.new("Frame")
-    knob.Size = UDim2.fromOffset(20, 20)
-    knob.Position = Features[stateKey] and UDim2.new(1, -23, 0.5, -10) or UDim2.new(0, 3, 0.5, -10)
-    knob.BackgroundColor3 = Theme.ToggleKnob
-    knob.Parent = toggleBtn
-    
-    local knobCorner = Instance.new("UICorner")
-    knobCorner.CornerRadius = UDim.new(1, 0)
-    knobCorner.Parent = knob
-    
-    toggleBtn.MouseButton1Click:Connect(function()
-        Features[stateKey] = not Features[stateKey]
-        local active = Features[stateKey]
-        
-        TweenService:Create(toggleBtn, TweenInfo.new(0.2, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
-            BackgroundColor3 = active and Theme.AccentBlue or Theme.ToggleOff
-        }):Play()
-        
-        TweenService:Create(knob, TweenInfo.new(0.2, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
-            Position = active and UDim2.new(1, -23, 0.5, -10) or UDim2.new(0, 3, 0.5, -10)
-        }):Play()
-
-        if active then
-            StartLoadingFeature(stateKey, name)
-        else
-            CancelLoadingFeature(stateKey)
-        end
-    end)
-end
-
--- Render 4 Features
-CreateFeatureRow(1, "Lag Players", "Users", "LagPlayers")
-CreateFeatureRow(2, "Private Server", "Shield", "PrivateServer")
-CreateFeatureRow(3, "Auto Kick Other Players", "Prohibited", "AutoKickOtherPlayers")
-CreateFeatureRow(4, "Auto Stack Players\non Loading", "CircularArrows", "AutoStackPlayersOnLoading")
-
--- [ 9. INSTANT 1:1 DRAG ENGINE (HEADER ONLY, NO RESIZE) ]
-local isDragging = false
-local dragStartPos = Vector3.new()
-local startFramePos = UDim2.new()
-local currentDragInput = nil
+local Subtitle = Instance.new("TextLabel")
+Subtitle.Name = "Subtitle"
+Subtitle.Size = UDim2.new(1, -125, 0, 16)
+Subtitle.Position = UDim2.fromOffset(70, 35)
+Subtitle.BackgroundTransparency = 1
+Subtitle.Text = "ANTI HIT"
+Subtitle.TextColor3 = Theme.TextMuted
+Subtitle.Font = Enum.Font.GothamMedium
+Subtitle.TextSize = 8
+Subtitle.TextXAlignment = Enum.TextXAlignment.Left
+Subtitle.ZIndex = 11
+Subtitle.Parent = Header
+
+-- ============================================================================
+-- MINUS BUTTON
+-- ============================================================================
+
+local MinimizeButton = Instance.new("TextButton")
+MinimizeButton.Name = "MinimizeButton"
+MinimizeButton.Size = UDim2.fromOffset(38, 38)
+MinimizeButton.Position = UDim2.new(1, -51, 0, 12)
+MinimizeButton.BackgroundColor3 = Theme.Card
+MinimizeButton.BorderSizePixel = 0
+MinimizeButton.Text = "−"
+MinimizeButton.TextColor3 = Theme.TextSecondary
+MinimizeButton.Font = Enum.Font.GothamMedium
+MinimizeButton.TextSize = 20
+MinimizeButton.AutoButtonColor = false
+MinimizeButton.ZIndex = 12
+MinimizeButton.Parent = Header
+
+local MinCorner = Instance.new("UICorner")
+MinCorner.CornerRadius = UDim.new(0, 12)
+MinCorner.Parent = MinimizeButton
+
+local MinStroke = Instance.new("UIStroke")
+MinStroke.Color = Theme.Border
+MinStroke.Thickness = 1
+MinStroke.Transparency = 0.25
+MinStroke.Parent = MinimizeButton
+
+-- ============================================================================
+-- CONTENT AREA
+-- ============================================================================
+
+local Content = Instance.new("Frame")
+Content.Name = "Content"
+Content.Size = UDim2.new(1, -30, 0, 102)
+Content.Position = UDim2.fromOffset(15, 72)
+Content.BackgroundTransparency = 1
+Content.ZIndex = 5
+Content.Parent = MainFrame
+
+local FeatureLabel = Instance.new("TextLabel")
+FeatureLabel.Size = UDim2.new(1, 0, 0, 18)
+FeatureLabel.Position = UDim2.fromOffset(2, 0)
+FeatureLabel.BackgroundTransparency = 1
+FeatureLabel.Text = "PROTECTION"
+FeatureLabel.TextColor3 = Theme.TextMuted
+FeatureLabel.Font = Enum.Font.GothamMedium
+FeatureLabel.TextSize = 8
+FeatureLabel.TextXAlignment = Enum.TextXAlignment.Left
+FeatureLabel.ZIndex = 6
+FeatureLabel.Parent = Content
+
+-- ============================================================================
+-- ANTI HIT BUTTON
+-- ============================================================================
+
+local AntiHitButton = Instance.new("TextButton")
+AntiHitButton.Name = "AntiHitButton"
+AntiHitButton.Size = UDim2.new(1, 0, 0, 65)
+AntiHitButton.Position = UDim2.fromOffset(0, 22)
+AntiHitButton.BackgroundColor3 = Theme.Off
+AntiHitButton.BorderSizePixel = 0
+AntiHitButton.AutoButtonColor = false
+AntiHitButton.Text = ""
+AntiHitButton.ZIndex = 7
+AntiHitButton.Parent = Content
+
+local AntiHitCorner = Instance.new("UICorner")
+AntiHitCorner.CornerRadius = UDim.new(0, 15)
+AntiHitCorner.Parent = AntiHitButton
+
+local AntiHitStroke = Instance.new("UIStroke")
+AntiHitStroke.Name = "AntiHitStroke"
+AntiHitStroke.Color = Theme.OffStroke
+AntiHitStroke.Thickness = 1
+AntiHitStroke.Transparency = 0.2
+AntiHitStroke.Parent = AntiHitButton
+
+local ButtonGradient = Instance.new("UIGradient")
+ButtonGradient.Rotation = 90
+ButtonGradient.Color = ColorSequence.new({
+	ColorSequenceKeypoint.new(0, Color3.fromRGB(21, 29, 43)),
+	ColorSequenceKeypoint.new(1, Color3.fromRGB(15, 21, 32))
+})
+ButtonGradient.Parent = AntiHitButton
+
+-- ============================================================================
+-- STATUS DOT
+-- ============================================================================
+
+local StatusDot = Instance.new("Frame")
+StatusDot.Name = "StatusDot"
+StatusDot.Size = UDim2.fromOffset(8, 8)
+StatusDot.Position = UDim2.fromOffset(18, 28)
+StatusDot.BackgroundColor3 = Color3.fromRGB(100, 111, 130)
+StatusDot.BorderSizePixel = 0
+StatusDot.ZIndex = 9
+StatusDot.Parent = AntiHitButton
+
+local StatusDotCorner = Instance.new("UICorner")
+StatusDotCorner.CornerRadius = UDim.new(1, 0)
+StatusDotCorner.Parent = StatusDot
+
+-- ============================================================================
+-- STATUS TEXT
+-- ============================================================================
+
+local AntiHitTitle = Instance.new("TextLabel")
+AntiHitTitle.Size = UDim2.new(1, -100, 0, 21)
+AntiHitTitle.Position = UDim2.fromOffset(40, 12)
+AntiHitTitle.BackgroundTransparency = 1
+AntiHitTitle.Text = "ANTI HIT"
+AntiHitTitle.TextColor3 = Theme.Text
+AntiHitTitle.Font = Enum.Font.GothamBold
+AntiHitTitle.TextSize = 13
+AntiHitTitle.TextXAlignment = Enum.TextXAlignment.Left
+AntiHitTitle.ZIndex = 9
+AntiHitTitle.Parent = AntiHitButton
+
+local AntiHitSub = Instance.new("TextLabel")
+AntiHitSub.Size = UDim2.new(1, -100, 0, 16)
+AntiHitSub.Position = UDim2.fromOffset(40, 33)
+AntiHitSub.BackgroundTransparency = 1
+AntiHitSub.Text = "Protection disabled"
+AntiHitSub.TextColor3 = Theme.TextMuted
+AntiHitSub.Font = Enum.Font.GothamMedium
+AntiHitSub.TextSize = 8
+AntiHitSub.TextXAlignment = Enum.TextXAlignment.Left
+AntiHitSub.ZIndex = 9
+AntiHitSub.Parent = AntiHitButton
+
+-- ============================================================================
+-- ON / OFF INDICATOR
+-- ============================================================================
+
+local StatusText = Instance.new("TextLabel")
+StatusText.Size = UDim2.fromOffset(55, 20)
+StatusText.Position = UDim2.new(1, -72, 0, 22)
+StatusText.BackgroundTransparency = 1
+StatusText.Text = "OFF"
+StatusText.TextColor3 = Theme.TextMuted
+StatusText.Font = Enum.Font.GothamBold
+StatusText.TextSize = 9
+StatusText.TextXAlignment = Enum.TextXAlignment.Right
+StatusText.ZIndex = 9
+StatusText.Parent = AntiHitButton
+
+-- ============================================================================
+-- HOVER
+-- ============================================================================
+
+AntiHitButton.MouseEnter:Connect(function()
+	if IsTransitioning then
+		return
+	end
+
+	Tween(
+		AntiHitButton,
+		0.16,
+		{
+			BackgroundColor3 = isAntiHitActive
+				and Color3.fromRGB(22, 58, 51)
+				or Theme.CardHover
+		},
+		Enum.EasingStyle.Quart
+	)
+
+	Tween(
+		AntiHitStroke,
+		0.16,
+		{
+			Transparency = 0,
+			Color = isAntiHitActive
+				and Theme.OnStroke
+				or Theme.Accent
+		}
+	)
+end)
+
+AntiHitButton.MouseLeave:Connect(function()
+	if isAntiHitActive then
+		Tween(AntiHitButton, 0.18, {
+			BackgroundColor3 = Theme.On
+		})
+
+		Tween(AntiHitStroke, 0.18, {
+			Color = Theme.OnStroke,
+			Transparency = 0.15
+		})
+	else
+		Tween(AntiHitButton, 0.18, {
+			BackgroundColor3 = Theme.Off
+		})
+
+		Tween(AntiHitStroke, 0.18, {
+			Color = Theme.OffStroke,
+			Transparency = 0.2
+		})
+	end
+end)
+
+-- ============================================================================
+-- TOGGLE BUTTON
+-- ============================================================================
+
+local ToggleButton = Instance.new("TextButton")
+ToggleButton.Name = "MinimizedToggle"
+ToggleButton.Size = UDim2.fromOffset(245, 50)
+ToggleButton.Position = UDim2.fromScale(0.5, 0.5)
+ToggleButton.AnchorPoint = Vector2.new(0.5, 0.5)
+ToggleButton.BackgroundColor3 = Theme.Background
+ToggleButton.BorderSizePixel = 0
+ToggleButton.Text = ""
+ToggleButton.Visible = false
+ToggleButton.AutoButtonColor = false
+ToggleButton.Active = true
+ToggleButton.ZIndex = 500
+ToggleButton.Parent = ScreenGui
+
+local ToggleCorner = Instance.new("UICorner")
+ToggleCorner.CornerRadius = UDim.new(0, 18)
+ToggleCorner.Parent = ToggleButton
+
+local ToggleStroke = Instance.new("UIStroke")
+ToggleStroke.Color = Theme.Border
+ToggleStroke.Thickness = 1.5
+ToggleStroke.Transparency = 0.05
+ToggleStroke.Parent = ToggleButton
+
+local ToggleGradient = Instance.new("UIGradient")
+ToggleGradient.Rotation = 90
+ToggleGradient.Color = ColorSequence.new({
+	ColorSequenceKeypoint.new(0, Color3.fromRGB(11, 16, 26)),
+	ColorSequenceKeypoint.new(1, Color3.fromRGB(6, 9, 15))
+})
+ToggleGradient.Parent = ToggleButton
+
+-- ============================================================================
+-- TOGGLE LOGO
+-- ============================================================================
+
+local ToggleLogo = Instance.new("Frame")
+ToggleLogo.Name = "ToggleLogo"
+ToggleLogo.Size = UDim2.fromOffset(34, 34)
+ToggleLogo.Position = UDim2.fromOffset(8, 8)
+ToggleLogo.BackgroundColor3 = Color3.fromRGB(10, 18, 32)
+ToggleLogo.BorderSizePixel = 0
+ToggleLogo.ZIndex = 501
+ToggleLogo.Parent = ToggleButton
+
+local ToggleLogoCorner = Instance.new("UICorner")
+ToggleLogoCorner.CornerRadius = UDim.new(0, 10)
+ToggleLogoCorner.Parent = ToggleLogo
+
+local ToggleLogoStroke = Instance.new("UIStroke")
+ToggleLogoStroke.Color = Theme.Accent
+ToggleLogoStroke.Thickness = 1
+ToggleLogoStroke.Transparency = 0.35
+ToggleLogoStroke.Parent = ToggleLogo
+
+local ToggleFVertical = Instance.new("Frame")
+ToggleFVertical.Size = UDim2.fromOffset(6, 22)
+ToggleFVertical.Position = UDim2.fromOffset(9, 6)
+ToggleFVertical.BackgroundColor3 = Theme.Accent
+ToggleFVertical.BorderSizePixel = 0
+ToggleFVertical.Rotation = -7
+ToggleFVertical.ZIndex = 502
+ToggleFVertical.Parent = ToggleLogo
+
+local ToggleFTop = Instance.new("Frame")
+ToggleFTop.Size = UDim2.fromOffset(17, 6)
+ToggleFTop.Position = UDim2.fromOffset(13, 5)
+ToggleFTop.BackgroundColor3 = Theme.Accent
+ToggleFTop.BorderSizePixel = 0
+ToggleFTop.Rotation = -7
+ToggleFTop.ZIndex = 502
+ToggleFTop.Parent = ToggleLogo
+
+local ToggleFMiddle = Instance.new("Frame")
+ToggleFMiddle.Size = UDim2.fromOffset(13, 5)
+ToggleFMiddle.Position = UDim2.fromOffset(12, 14)
+ToggleFMiddle.BackgroundColor3 = Theme.AccentLight
+ToggleFMiddle.BorderSizePixel = 0
+ToggleFMiddle.Rotation = -7
+ToggleFMiddle.ZIndex = 502
+ToggleFMiddle.Parent = ToggleLogo
+
+-- ============================================================================
+-- TOGGLE TITLE
+-- ============================================================================
+
+local ToggleTitle = Instance.new("TextLabel")
+ToggleTitle.Size = UDim2.new(1, -65, 0, 22)
+ToggleTitle.Position = UDim2.fromOffset(51, 8)
+ToggleTitle.BackgroundTransparency = 1
+ToggleTitle.RichText = true
+ToggleTitle.Text = 'leon4951 <font color="rgb(65,135,255)">Hub</font>'
+ToggleTitle.TextColor3 = Theme.Text
+ToggleTitle.Font = Enum.Font.GothamBold
+ToggleTitle.TextSize = 13
+ToggleTitle.TextXAlignment = Enum.TextXAlignment.Left
+ToggleTitle.ZIndex = 501
+ToggleTitle.Parent = ToggleButton
+
+local ToggleSubtitle = Instance.new("TextLabel")
+ToggleSubtitle.Size = UDim2.new(1, -65, 0, 13)
+ToggleSubtitle.Position = UDim2.fromOffset(52, 29)
+ToggleSubtitle.BackgroundTransparency = 1
+ToggleSubtitle.Text = "ANTI HIT"
+ToggleSubtitle.TextColor3 = Theme.TextMuted
+ToggleSubtitle.Font = Enum.Font.GothamMedium
+ToggleSubtitle.TextSize = 7
+ToggleSubtitle.TextXAlignment = Enum.TextXAlignment.Left
+ToggleSubtitle.ZIndex = 501
+ToggleSubtitle.Parent = ToggleButton
+
+-- ============================================================================
+-- MAIN UI DRAG
+-- ============================================================================
+
+local MainDragging = false
+local MainDragStart = nil
+local MainStartPosition = nil
+local MainDragInput = nil
 
 Header.InputBegan:Connect(function(input)
-    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-        isDragging = true
-        dragStartPos = input.Position
-        startFramePos = MainFrame.Position
-        currentDragInput = input
-    end
+	if IsTransitioning then
+		return
+	end
+
+	if input.UserInputType == Enum.UserInputType.MouseButton1
+		or input.UserInputType == Enum.UserInputType.Touch then
+
+		MainDragging = true
+		MainDragStart = input.Position
+		MainStartPosition = MainFrame.Position
+		MainDragInput = input
+	end
 end)
 
 Header.InputEnded:Connect(function(input)
-    if input == currentDragInput or input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-        isDragging = false
-        currentDragInput = nil
-    end
+	if input == MainDragInput then
+		MainDragging = false
+		MainDragInput = nil
+	end
 end)
 
 UserInputService.InputChanged:Connect(function(input)
-    if isDragging and (input == currentDragInput or input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
-        local delta = input.Position - dragStartPos
-        MainFrame.Position = UDim2.new(
-            startFramePos.X.Scale,
-            startFramePos.X.Offset + delta.X,
-            startFramePos.Y.Scale,
-            startFramePos.Y.Offset + delta.Y
-        )
-    end
+	if not MainDragging then
+		return
+	end
+
+	if input.UserInputType == Enum.UserInputType.MouseMovement
+		or input.UserInputType == Enum.UserInputType.Touch then
+
+		if not MainDragStart or not MainStartPosition then
+			return
+		end
+
+		local delta = input.Position - MainDragStart
+
+		MainFrame.Position = UDim2.new(
+			MainStartPosition.X.Scale,
+			MainStartPosition.X.Offset + delta.X,
+			MainStartPosition.Y.Scale,
+			MainStartPosition.Y.Offset + delta.Y
+		)
+	end
+end)
+
+-- ============================================================================
+-- TOGGLE DRAG
+-- ============================================================================
+
+local ToggleDragging = false
+local ToggleDragStart = nil
+local ToggleStartPosition = nil
+local ToggleMoved = false
+
+ToggleButton.InputBegan:Connect(function(input)
+	if IsTransitioning then
+		return
+	end
+
+	if input.UserInputType == Enum.UserInputType.MouseButton1
+		or input.UserInputType == Enum.UserInputType.Touch then
+
+		ToggleDragging = true
+		ToggleMoved = false
+		ToggleDragStart = input.Position
+		ToggleStartPosition = ToggleButton.Position
+	end
+end)
+
+UserInputService.InputChanged:Connect(function(input)
+	if not ToggleDragging then
+		return
+	end
+
+	if input.UserInputType == Enum.UserInputType.MouseMovement
+		or input.UserInputType == Enum.UserInputType.Touch then
+
+		if not ToggleDragStart or not ToggleStartPosition then
+			return
+		end
+
+		local delta = input.Position - ToggleDragStart
+
+		if math.abs(delta.X) > 5 or math.abs(delta.Y) > 5 then
+			ToggleMoved = true
+		end
+
+		ToggleButton.Position = UDim2.new(
+			ToggleStartPosition.X.Scale,
+			ToggleStartPosition.X.Offset + delta.X,
+			ToggleStartPosition.Y.Scale,
+			ToggleStartPosition.Y.Offset + delta.Y
+		)
+	end
 end)
 
 UserInputService.InputEnded:Connect(function(input)
-    if input == currentDragInput or input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-        isDragging = false
-        currentDragInput = nil
-    end
+	if input.UserInputType == Enum.UserInputType.MouseButton1
+		or input.UserInputType == Enum.UserInputType.Touch then
+
+		ToggleDragging = false
+	end
 end)
 
--- [ 10. FLOATING F TOGGLE BUTTON ]
-local FloatingBtn = Instance.new("TextButton")
-FloatingBtn.Name = "FloatingToggleBtn"
-FloatingBtn.Size = UDim2.fromOffset(52, 52)
-FloatingBtn.Position = UDim2.new(0, 10, 0.5, -26)
-FloatingBtn.BackgroundColor3 = Theme.Background
-FloatingBtn.BorderSizePixel = 0
-FloatingBtn.Visible = false
-FloatingBtn.Active = true
-FloatingBtn.Text = ""
-FloatingBtn.Parent = ScreenGui
+-- ============================================================================
+-- TOGGLE HOVER
+-- ============================================================================
 
-local FloatingCorner = Instance.new("UICorner")
-FloatingCorner.CornerRadius = UDim.new(0, 13)
-FloatingCorner.Parent = FloatingBtn
+ToggleButton.MouseEnter:Connect(function()
+	if ToggleDragging or IsTransitioning then
+		return
+	end
 
-local FloatingStroke = Instance.new("UIStroke")
-FloatingStroke.Color = Theme.AccentBlue
-FloatingStroke.Thickness = 2
-FloatingStroke.Parent = FloatingBtn
+	Tween(
+		ToggleButton,
+		0.15,
+		{
+			Size = UDim2.fromOffset(252, 52)
+		},
+		Enum.EasingStyle.Quart
+	)
 
-local FloatingLogo = CreateFLogo(UDim2.new(0, 24, 0, 24), -12)
-FloatingLogo.Position = UDim2.new(0.5, -12, 0.5, -12)
-FloatingLogo.Parent = FloatingBtn
-
-local FloatingScale = Instance.new("UIScale")
-FloatingScale.Scale = 1
-FloatingScale.Parent = FloatingBtn
-
-local floatDragging = false
-local floatDragStart = Vector3.new()
-local floatStartPos = UDim2.new()
-local floatInputObj = nil
-
-FloatingBtn.InputBegan:Connect(function(input)
-    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-        floatDragging = true
-        floatDragStart = input.Position
-        floatStartPos = FloatingBtn.Position
-        floatInputObj = input
-    end
+	Tween(
+		ToggleStroke,
+		0.15,
+		{
+			Color = Theme.Accent,
+			Transparency = 0
+		}
+	)
 end)
 
-FloatingBtn.InputEnded:Connect(function(input)
-    if input == floatInputObj or input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-        floatDragging = false
-        floatInputObj = nil
-    end
+ToggleButton.MouseLeave:Connect(function()
+	if ToggleDragging then
+		return
+	end
+
+	Tween(
+		ToggleButton,
+		0.15,
+		{
+			Size = UDim2.fromOffset(245, 50)
+		},
+		Enum.EasingStyle.Quart
+	)
+
+	Tween(
+		ToggleStroke,
+		0.15,
+		{
+			Color = Theme.Border,
+			Transparency = 0.05
+		}
+	)
 end)
 
-UserInputService.InputChanged:Connect(function(input)
-    if floatDragging and (input == floatInputObj or input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
-        local delta = input.Position - floatDragStart
-        FloatingBtn.Position = UDim2.new(
-            floatStartPos.X.Scale,
-            floatStartPos.X.Offset + delta.X,
-            floatStartPos.Y.Scale,
-            floatStartPos.Y.Offset + delta.Y
-        )
-    end
-end)
+-- ============================================================================
+-- VIEWPORT CENTER
+-- ============================================================================
 
-local function ToggleMainUI(show)
-    if show then
-        -- Buka kembali MainFrame dengan animasi pop-in (dari kecil ke normal)
-        MainFrame.Size = UDim2.fromOffset(240, 230)
-        MainFrame.Visible = true
-        MainScale.Scale = 0
+local function GetViewport()
+	local camera = workspace.CurrentCamera
 
-        TweenService:Create(FloatingScale, TweenInfo.new(0.12, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {
-            Scale = 0
-        }):Play()
+	if camera then
+		return camera.ViewportSize
+	end
 
-        TweenService:Create(MainScale, TweenInfo.new(0.22, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {
-            Scale = 1
-        }):Play()
-
-        task.delay(0.12, function()
-            FloatingBtn.Visible = false
-        end)
-    else
-        -- Tutup MainFrame dengan animasi pop-out, lalu munculkan tombol F dengan pop-in
-        local closeTween = TweenService:Create(MainScale, TweenInfo.new(0.16, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {
-            Scale = 0
-        })
-        closeTween:Play()
-
-        task.delay(0.16, function()
-            MainFrame.Visible = false
-            FloatingBtn.Visible = true
-            FloatingScale.Scale = 0
-
-            TweenService:Create(FloatingScale, TweenInfo.new(0.2, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {
-                Scale = 1
-            }):Play()
-        end)
-    end
+	return Vector2.new(1920, 1080)
 end
 
-FloatingBtn.MouseButton1Click:Connect(function()
-    ToggleMainUI(true)
+local function GetCenterPosition()
+	local viewport = GetViewport()
+
+	return UDim2.fromOffset(
+		viewport.X * 0.5,
+		viewport.Y * 0.5
+	)
+end
+
+-- ============================================================================
+-- TOP TOGGLE POSITION
+-- ============================================================================
+-- DIUBAH:
+-- sebelumnya 38px dari atas
+-- sekarang 15px dari atas
+-- ============================================================================
+
+local function GetTopTogglePosition()
+	local viewport = GetViewport()
+
+	return UDim2.fromOffset(
+		viewport.X * 0.5,
+		-5
+	)
+end
+
+-- ============================================================================
+-- MINIMIZE ANIMATION
+-- ============================================================================
+
+local function MinimizeUI()
+	if IsTransitioning or IsMinimized then
+		return
+	end
+
+	IsTransitioning = true
+	IsMinimized = true
+
+	MinimizeButton.Active = false
+	AntiHitButton.Active = false
+
+	local centerPosition = GetCenterPosition()
+
+	-- STEP 1:
+	-- Main UI bergerak ke tengah
+	Tween(
+		MainFrame,
+		0.45,
+		{
+			Position = centerPosition
+		},
+		Enum.EasingStyle.Quart,
+		Enum.EasingDirection.InOut
+	)
+
+	task.wait(0.47)
+
+	-- STEP 2:
+	-- Pause di tengah
+	task.wait(0.30)
+
+	-- STEP 3:
+	-- Main UI mengecil menjadi bentuk toggle
+	Tween(
+		MainFrame,
+		0.40,
+		{
+			Size = UDim2.fromOffset(245, 50)
+		},
+		Enum.EasingStyle.Quart,
+		Enum.EasingDirection.InOut
+	)
+
+	task.wait(0.42)
+
+	-- STEP 4:
+	-- Hide main UI
+	MainFrame.Visible = false
+
+	-- STEP 5:
+	-- Munculkan toggle tepat di tengah
+	ToggleButton.Position = centerPosition
+	ToggleButton.Size = UDim2.fromOffset(245, 50)
+	ToggleButton.Visible = true
+
+	-- STEP 6:
+	-- Toggle bergerak ke bagian paling atas
+	task.wait(0.05)
+
+	local topPosition = GetTopTogglePosition()
+
+	Tween(
+		ToggleButton,
+		0.55,
+		{
+			Position = topPosition
+		},
+		Enum.EasingStyle.Quart,
+		Enum.EasingDirection.Out
+	)
+
+	task.wait(0.58)
+
+	ToggleButton.Active = true
+	IsTransitioning = false
+end
+
+-- ============================================================================
+-- RESTORE ANIMATION
+-- ============================================================================
+
+local function RestoreUI()
+	if IsTransitioning or not IsMinimized then
+		return
+	end
+
+	IsTransitioning = true
+
+	ToggleButton.Active = false
+
+	local centerPosition = GetCenterPosition()
+
+	-- STEP 1:
+	-- Toggle turun ke tengah
+	Tween(
+		ToggleButton,
+		0.55,
+		{
+			Position = centerPosition
+		},
+		Enum.EasingStyle.Quart,
+		Enum.EasingDirection.InOut
+	)
+
+	task.wait(0.58)
+
+	-- STEP 2:
+	-- Pause di tengah
+	task.wait(0.30)
+
+	-- STEP 3:
+	-- Hide toggle
+	ToggleButton.Visible = false
+
+	-- STEP 4:
+	-- Main UI muncul dalam bentuk kecil
+	MainFrame.Visible = true
+	MainFrame.Position = centerPosition
+	MainFrame.Size = UDim2.fromOffset(245, 50)
+
+	-- STEP 5:
+	-- Morph menjadi panel
+	Tween(
+		MainFrame,
+		0.45,
+		{
+			Size = UDim2.fromOffset(MAIN_WIDTH, MAIN_HEIGHT)
+		},
+		Enum.EasingStyle.Back,
+		Enum.EasingDirection.Out
+	)
+
+	task.wait(0.48)
+
+	-- STEP 6:
+	-- Bergerak kembali ke posisi kiri
+	Tween(
+		MainFrame,
+		0.55,
+		{
+			Position = MAIN_HOME_POSITION
+		},
+		Enum.EasingStyle.Quart,
+		Enum.EasingDirection.Out
+	)
+
+	task.wait(0.58)
+
+	IsMinimized = false
+	IsTransitioning = false
+
+	MinimizeButton.Active = true
+	AntiHitButton.Active = true
+end
+
+-- ============================================================================
+-- MINUS BUTTON
+-- ============================================================================
+
+MinimizeButton.MouseEnter:Connect(function()
+	if IsTransitioning then
+		return
+	end
+
+	Tween(
+		MinimizeButton,
+		0.15,
+		{
+			BackgroundColor3 = Theme.CardHover
+		}
+	)
+
+	Tween(
+		MinStroke,
+		0.15,
+		{
+			Color = Theme.Accent,
+			Transparency = 0
+		}
+	)
 end)
 
-local isMinimized = false
+MinimizeButton.MouseLeave:Connect(function()
+	Tween(
+		MinimizeButton,
+		0.15,
+		{
+			BackgroundColor3 = Theme.Card
+		}
+	)
 
-CreateHeaderButton("—", function()
-    isMinimized = not isMinimized
-    if isMinimized then
-        TweenService:Create(MainFrame, TweenInfo.new(0.2, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), {
-            Size = UDim2.fromOffset(240, 30)
-        }):Play()
-    else
-        TweenService:Create(MainFrame, TweenInfo.new(0.2, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), {
-            Size = UDim2.fromOffset(240, 230)
-        }):Play()
-    end
+	Tween(
+		MinStroke,
+		0.15,
+		{
+			Color = Theme.Border,
+			Transparency = 0.25
+		}
+	)
 end)
 
-CreateHeaderButton("X", function()
-    ToggleMainUI(false)
+MinimizeButton.MouseButton1Click:Connect(function()
+	MinimizeUI()
 end)
 
--- [ 11. BOOT LOADING SCREEN (MUNCUL DULUAN SEBELUM UI HUB TAMPIL) ]
-local BootScreen = Instance.new("CanvasGroup")
-BootScreen.Name = "BootScreen"
-BootScreen.Size = UDim2.fromOffset(280, 130)
-BootScreen.AnchorPoint = Vector2.new(0.5, 0.5)
-BootScreen.Position = UDim2.fromScale(0.5, 0.5)
-BootScreen.BackgroundColor3 = Theme.Background
-BootScreen.GroupTransparency = 0
-BootScreen.ZIndex = 100
-BootScreen.Parent = ScreenGui
+-- ============================================================================
+-- TOGGLE CLICK
+-- ============================================================================
 
-local BootCorner = Instance.new("UICorner")
-BootCorner.CornerRadius = UDim.new(0, 12)
-BootCorner.Parent = BootScreen
+ToggleButton.MouseButton1Click:Connect(function()
+	if ToggleMoved then
+		ToggleMoved = false
+		return
+	end
 
-local BootStroke = Instance.new("UIStroke")
-BootStroke.Color = Theme.BorderColor
-BootStroke.Thickness = 1
-BootStroke.Parent = BootScreen
+	RestoreUI()
+end)
 
--- Logo F gede di atas
-local BootLogo = CreateFLogo(UDim2.new(0, 30, 0, 30), -12)
-BootLogo.Position = UDim2.new(0.5, -15, 0, 16)
-BootLogo.Parent = BootScreen
+-- ============================================================================
+-- ANTI HIT UI STATE
+-- ============================================================================
 
--- Spinner: ring diam + titik biru yang muter ngelilingin (versi gede)
-local BootRing = Instance.new("Frame")
-BootRing.Size = UDim2.fromOffset(0, 0)
-BootRing.BackgroundTransparency = 1
-BootRing.Parent = BootScreen
+local function UpdateAntiHitUI()
+	if isAntiHitActive then
 
-local BootTitle = Instance.new("TextLabel")
-BootTitle.Font = Enum.Font.GothamBold
-BootTitle.TextSize = 16
-BootTitle.TextColor3 = Theme.TextPrimary
-BootTitle.BackgroundTransparency = 1
-BootTitle.Size = UDim2.new(1, -20, 0, 20)
-BootTitle.Position = UDim2.new(0, 10, 0, 54)
-BootTitle.RichText = true
-BootTitle.Text = "leon4951 <font color=\"rgb(37, 120, 255)\">Hub</font>"
-BootTitle.Parent = BootScreen
+		StatusText.Text = "ON"
+		StatusText.TextColor3 = Theme.OnAccent
 
-local BootSubText = Instance.new("TextLabel")
-BootSubText.Font = Enum.Font.Gotham
-BootSubText.TextSize = 10
-BootSubText.TextColor3 = Theme.TextSecondary
-BootSubText.BackgroundTransparency = 1
-BootSubText.Size = UDim2.new(1, -20, 0, 14)
-BootSubText.Position = UDim2.new(0, 10, 0, 76)
-BootSubText.Text = "Loading..."
-BootSubText.Parent = BootScreen
+		AntiHitSub.Text = "Protection enabled"
 
--- Progress bar gede
-local BootTrack = Instance.new("Frame")
-BootTrack.Size = UDim2.new(1, -40, 0, 8)
-BootTrack.Position = UDim2.new(0, 20, 1, -30)
-BootTrack.BackgroundColor3 = Theme.ToggleOff
-BootTrack.BorderSizePixel = 0
-BootTrack.Parent = BootScreen
-Instance.new("UICorner", BootTrack).CornerRadius = UDim.new(1, 0)
+		StatusDot.BackgroundColor3 = Theme.OnAccent
 
-local BootFill = Instance.new("Frame")
-BootFill.Size = UDim2.new(0, 0, 1, 0)
-BootFill.BackgroundColor3 = Theme.AccentBlue
-BootFill.BorderSizePixel = 0
-BootFill.Parent = BootTrack
-Instance.new("UICorner", BootFill).CornerRadius = UDim.new(1, 0)
+		Tween(
+			AntiHitButton,
+			0.22,
+			{
+				BackgroundColor3 = Theme.On
+			},
+			Enum.EasingStyle.Quart
+		)
 
-local BootPercentLabel = Instance.new("TextLabel")
-BootPercentLabel.Font = Enum.Font.GothamBold
-BootPercentLabel.TextSize = 11
-BootPercentLabel.TextColor3 = Theme.TextPrimary
-BootPercentLabel.BackgroundTransparency = 1
-BootPercentLabel.TextXAlignment = Enum.TextXAlignment.Right
-BootPercentLabel.Size = UDim2.new(1, -40, 0, 14)
-BootPercentLabel.Position = UDim2.new(0, 20, 1, -46)
-BootPercentLabel.Text = "0%"
-BootPercentLabel.Parent = BootScreen
+		Tween(
+			AntiHitStroke,
+			0.22,
+			{
+				Color = Theme.OnStroke,
+				Transparency = 0.1
+			}
+		)
 
--- Jalanin boot loading, baru munculin UI hub setelah selesai
--- Progress smooth berbasis waktu (elapsed/duration) via Heartbeat, status berubah berurutan
-local BootStatuses = {
-    { 0.00, "Initializing..." },
-    { 0.20, "Loading UI..." },
-    { 0.40, "Loading Components..." },
-    { 0.65, "Preparing Features..." },
-    { 0.85, "Finalizing..." },
-}
+	else
 
-local bootDuration = 2.6
-local bootStartTime = os.clock()
-local bootConn
+		StatusText.Text = "OFF"
+		StatusText.TextColor3 = Theme.TextMuted
 
-bootConn = RunService.Heartbeat:Connect(function()
-    local elapsed = os.clock() - bootStartTime
-    local pct = math.clamp(elapsed / bootDuration, 0, 1)
+		AntiHitSub.Text = "Protection disabled"
 
-    BootFill.Size = UDim2.new(pct, 0, 1, 0)
-    BootPercentLabel.Text = math.floor(pct * 100) .. "%"
+		StatusDot.BackgroundColor3 = Color3.fromRGB(100, 111, 130)
 
-    for _, status in ipairs(BootStatuses) do
-        if pct >= status[1] then
-            BootSubText.Text = status[2]
-        end
-    end
+		Tween(
+			AntiHitButton,
+			0.22,
+			{
+				BackgroundColor3 = Theme.Off
+			},
+			Enum.EasingStyle.Quart
+		)
 
-    if pct >= 1 then
-        bootConn:Disconnect()
-        bootConn = nil
-        BootSubText.Text = "\226\156\147 Ready" -- "✓ Ready"
+		Tween(
+			AntiHitStroke,
+			0.22,
+			{
+				Color = Theme.OffStroke,
+				Transparency = 0.2
+			}
+		)
+	end
+end
 
-        task.spawn(function()
-            task.wait(0.6)
+-- ============================================================================
+-- ANTI HIT TOGGLE
+-- ============================================================================
 
-            -- Boot loading kelar -> layar loading ilang, baru UI hub muncul
-            TweenService:Create(BootScreen, TweenInfo.new(0.25, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {
-                GroupTransparency = 1
-            }):Play()
+AntiHitButton.MouseButton1Click:Connect(function()
+	if IsTransitioning then
+		return
+	end
 
-            task.delay(0.25, function()
-                BootScreen:Destroy()
+	isAntiHitActive = not isAntiHitActive
 
-                MainFrame.Visible = true
-                MainScale.Scale = 0
-                TweenService:Create(MainScale, TweenInfo.new(0.25, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {
-                    Scale = 1
-                }):Play()
-            end)
-        end)
-    end
+	UpdateAntiHitUI()
+
+	Tween(
+		AntiHitButton,
+		0.07,
+		{
+			Size = UDim2.new(1, -4, 0, 63),
+			Position = UDim2.fromOffset(2, 23)
+		},
+		Enum.EasingStyle.Quad,
+		Enum.EasingDirection.Out
+	)
+
+	task.delay(0.08, function()
+		if AntiHitButton.Parent then
+			Tween(
+				AntiHitButton,
+				0.10,
+				{
+					Size = UDim2.new(1, 0, 0, 65),
+					Position = UDim2.fromOffset(0, 22)
+				},
+				Enum.EasingStyle.Back,
+				Enum.EasingDirection.Out
+			)
+		end
+	end)
+end)
+
+-- ============================================================================
+-- ANTI HIT LOGIC
+-- ============================================================================
+
+local function CreateFakeAndTeleportReal()
+	local char = LocalPlayer.Character
+	if not char then
+		return
+	end
+
+	local root = char:FindFirstChild("HumanoidRootPart")
+	local realHumanoid = char:FindFirstChildOfClass("Humanoid")
+
+	if not root or not realHumanoid then
+		return
+	end
+
+	local originalCFrame = root.CFrame
+
+	char.Archivable = true
+
+	local fakeChar = char:Clone()
+
+	char.Archivable = false
+
+	fakeChar.Name = "FakeVisualPlayer"
+
+	for _, part in ipairs(fakeChar:GetDescendants()) do
+		if part:IsA("BasePart") then
+
+			part.CanCollide = false
+			part.Anchored = true
+
+		elseif part:IsA("Script") or part:IsA("LocalScript") then
+
+			part:Destroy()
+		end
+	end
+
+	fakeChar.Parent = workspace
+	fakeChar:PivotTo(originalCFrame)
+
+	local camera = workspace.CurrentCamera
+
+	local fakeHumanoid = fakeChar:FindFirstChildOfClass("Humanoid")
+
+	if fakeHumanoid and camera then
+		camera.CameraSubject = fakeHumanoid
+	end
+
+	local targetCFrame = CFrame.new(
+		TARGET_POS + Vector3.new(0, 3, 0)
+	)
+
+	local startTime = os.clock()
+
+	local holdConnection
+
+	holdConnection = RunService.Heartbeat:Connect(function()
+
+		if not char
+			or not root
+			or not root.Parent then
+
+			if holdConnection then
+				holdConnection:Disconnect()
+			end
+
+			return
+		end
+
+		root.AssemblyLinearVelocity = Vector3.zero
+		root.AssemblyAngularVelocity = Vector3.zero
+
+		root.CFrame = targetCFrame
+		char:PivotTo(targetCFrame)
+
+		if os.clock() - startTime >= 0.5 then
+			holdConnection:Disconnect()
+		end
+	end)
+
+	task.delay(0.5, function()
+
+		if fakeChar then
+			fakeChar:Destroy()
+		end
+
+		if realHumanoid and camera then
+			camera.CameraSubject = realHumanoid
+		end
+	end)
+end
+
+-- ============================================================================
+-- EXECUTE ANTI HIT
+-- ============================================================================
+
+local function ExecuteDropAndTeleport()
+
+	if isProcessing or not isAntiHitActive then
+		return
+	end
+
+	isProcessing = true
+
+	task.wait(0.2)
+
+	local char = LocalPlayer.Character
+
+	if char then
+
+		for _, item in ipairs(char:GetChildren()) do
+
+			if item:IsA("Tool") then
+				item.Parent = workspace
+			end
+		end
+
+		CreateFakeAndTeleportReal()
+	end
+
+	task.delay(0.8, function()
+		isProcessing = false
+	end)
+end
+
+-- ============================================================================
+-- PROXIMITY PROMPT
+-- ============================================================================
+
+ProximityPromptService.PromptTriggered:Connect(function(
+	prompt,
+	playerWhoTriggered
+)
+
+	if isAntiHitActive
+		and playerWhoTriggered == LocalPlayer then
+
+		task.spawn(function()
+			ExecuteDropAndTeleport()
+		end)
+	end
+end)
+
+-- ============================================================================
+-- CHARACTER DETECTION
+-- ============================================================================
+
+local function SetupCharacterDetection(char)
+
+	char.ChildAdded:Connect(function(child)
+
+		if isAntiHitActive
+			and not child:IsA("Tool") then
+
+			local name = string.lower(child.Name)
+
+			if string.find(name, "egg")
+				or string.find(name, "telur") then
+
+				task.spawn(function()
+					ExecuteDropAndTeleport()
+				end)
+			end
+		end
+	end)
+end
+
+if LocalPlayer.Character then
+	SetupCharacterDetection(LocalPlayer.Character)
+end
+
+LocalPlayer.CharacterAdded:Connect(function(newChar)
+
+	task.wait(0.2)
+
+	SetupCharacterDetection(newChar)
+end)
+
+-- ============================================================================
+-- INITIAL UI STATE
+-- ============================================================================
+
+UpdateAntiHitUI()
+
+-- ============================================================================
+-- OPEN ANIMATION
+-- ============================================================================
+
+MainFrame.Size = UDim2.fromOffset(30, 30)
+MainFrame.BackgroundTransparency = 1
+
+MainStroke.Transparency = 1
+TopAccent.BackgroundTransparency = 1
+
+LogoHolder.BackgroundTransparency = 1
+LogoStroke.Transparency = 1
+
+Title.TextTransparency = 1
+Subtitle.TextTransparency = 1
+MinimizeButton.BackgroundTransparency = 1
+MinimizeButton.TextTransparency = 1
+MinStroke.Transparency = 1
+
+Content.BackgroundTransparency = 1
+FeatureLabel.TextTransparency = 1
+AntiHitButton.BackgroundTransparency = 1
+AntiHitStroke.Transparency = 1
+AntiHitTitle.TextTransparency = 1
+AntiHitSub.TextTransparency = 1
+StatusText.TextTransparency = 1
+StatusDot.BackgroundTransparency = 1
+
+Tween(
+	MainFrame,
+	0.55,
+	{
+		Size = UDim2.fromOffset(MAIN_WIDTH, MAIN_HEIGHT),
+		BackgroundTransparency = 0
+	},
+	Enum.EasingStyle.Back,
+	Enum.EasingDirection.Out
+)
+
+task.delay(0.05, function()
+
+	Tween(
+		MainStroke,
+		0.4,
+		{
+			Transparency = 0.08
+		}
+	)
+
+	Tween(
+		TopAccent,
+		0.4,
+		{
+			BackgroundTransparency = 0
+		}
+	)
+
+	Tween(
+		LogoHolder,
+		0.35,
+		{
+			BackgroundTransparency = 0
+		}
+	)
+
+	Tween(
+		LogoStroke,
+		0.35,
+		{
+			Transparency = 0.35
+		}
+	)
+end)
+
+task.delay(0.12, function()
+
+	Tween(
+		Title,
+		0.35,
+		{
+			TextTransparency = 0
+		}
+	)
+
+	Tween(
+		Subtitle,
+		0.35,
+		{
+			TextTransparency = 0
+		}
+	)
+
+	Tween(
+		MinimizeButton,
+		0.35,
+		{
+			BackgroundTransparency = 0,
+			TextTransparency = 0
+		}
+	)
+
+	Tween(
+		MinStroke,
+		0.35,
+		{
+			Transparency = 0.25
+		}
+	)
+end)
+
+task.delay(0.22, function()
+
+	Tween(
+		FeatureLabel,
+		0.3,
+		{
+			TextTransparency = 0
+		}
+	)
+
+	Tween(
+		AntiHitButton,
+		0.35,
+		{
+			BackgroundTransparency = 0
+		},
+		Enum.EasingStyle.Quart
+	)
+
+	Tween(
+		AntiHitStroke,
+		0.35,
+		{
+			Transparency = 0.2
+		}
+	)
+
+	Tween(
+		AntiHitTitle,
+		0.3,
+		{
+			TextTransparency = 0
+		}
+	)
+
+	Tween(
+		AntiHitSub,
+		0.3,
+		{
+			TextTransparency = 0
+		}
+	)
+
+	Tween(
+		StatusText,
+		0.3,
+		{
+			TextTransparency = 0
+		}
+	)
+
+	Tween(
+		StatusDot,
+		0.3,
+		{
+			BackgroundTransparency = 0
+		}
+	)
 end)
