@@ -2,8 +2,10 @@
 -- LEON4951 HUB - ANTI HIT
 -- PREMIUM UI + MINIMIZE/MORPH ANIMATION + DRAG SYSTEM
 --
--- GITHUB LOADSTRING:
--- loadstring(game:HttpGet("https://raw.githubusercontent.com/n01771542-cmd/faqihhlua/main/Main.lua"))()
+-- UPDATE:
+-- Toggle setelah minimize sekarang bergerak lebih dekat ke bagian paling atas.
+-- Posisi toggle: 15px dari atas layar.
+-- UI/fitur lainnya tetap dipertahankan.
 -- ============================================================================
 
 local CoreGui = game:GetService("CoreGui")
