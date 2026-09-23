@@ -2,6 +2,14 @@
 -- LEON4951 HUB - ANTI HIT
 -- PREMIUM UI + MINIMIZE/MORPH ANIMATION + DRAG SYSTEM
 --
+-- LOADER:
+-- loadstring(game:HttpGet("https://raw.githubusercontent.com/n01771542-cmd/fagihhlua/main/main.lua"))()
+--
+-- CATATAN:
+-- Loader sengaja dijadikan COMMENT agar main.lua tidak memanggil dirinya sendiri.
+-- Untuk menjalankan dari executor, gunakan:
+-- loadstring(game:HttpGet("https://raw.githubusercontent.com/n01771542-cmd/fagihhlua/main/main.lua"))()
+--
 -- UPDATE:
 -- Toggle setelah minimize sekarang bergerak lebih dekat ke bagian paling atas.
 -- Posisi toggle: 15px dari atas layar.
@@ -800,10 +808,6 @@ end
 -- ============================================================================
 -- TOP TOGGLE POSITION
 -- ============================================================================
--- DIUBAH:
--- sebelumnya 38px dari atas
--- sekarang 15px dari atas
--- ============================================================================
 
 local function GetTopTogglePosition()
 	local viewport = GetViewport()
@@ -831,8 +835,6 @@ local function MinimizeUI()
 
 	local centerPosition = GetCenterPosition()
 
-	-- STEP 1:
-	-- Main UI bergerak ke tengah
 	Tween(
 		MainFrame,
 		0.45,
@@ -845,12 +847,8 @@ local function MinimizeUI()
 
 	task.wait(0.47)
 
-	-- STEP 2:
-	-- Pause di tengah
 	task.wait(0.30)
 
-	-- STEP 3:
-	-- Main UI mengecil menjadi bentuk toggle
 	Tween(
 		MainFrame,
 		0.40,
@@ -863,18 +861,12 @@ local function MinimizeUI()
 
 	task.wait(0.42)
 
-	-- STEP 4:
-	-- Hide main UI
 	MainFrame.Visible = false
 
-	-- STEP 5:
-	-- Munculkan toggle tepat di tengah
 	ToggleButton.Position = centerPosition
 	ToggleButton.Size = UDim2.fromOffset(245, 50)
 	ToggleButton.Visible = true
 
-	-- STEP 6:
-	-- Toggle bergerak ke bagian paling atas
 	task.wait(0.05)
 
 	local topPosition = GetTopTogglePosition()
@@ -910,8 +902,6 @@ local function RestoreUI()
 
 	local centerPosition = GetCenterPosition()
 
-	-- STEP 1:
-	-- Toggle turun ke tengah
 	Tween(
 		ToggleButton,
 		0.55,
@@ -924,22 +914,14 @@ local function RestoreUI()
 
 	task.wait(0.58)
 
-	-- STEP 2:
-	-- Pause di tengah
 	task.wait(0.30)
 
-	-- STEP 3:
-	-- Hide toggle
 	ToggleButton.Visible = false
 
-	-- STEP 4:
-	-- Main UI muncul dalam bentuk kecil
 	MainFrame.Visible = true
 	MainFrame.Position = centerPosition
 	MainFrame.Size = UDim2.fromOffset(245, 50)
 
-	-- STEP 5:
-	-- Morph menjadi panel
 	Tween(
 		MainFrame,
 		0.45,
@@ -952,8 +934,6 @@ local function RestoreUI()
 
 	task.wait(0.48)
 
-	-- STEP 6:
-	-- Bergerak kembali ke posisi kiri
 	Tween(
 		MainFrame,
 		0.55,
