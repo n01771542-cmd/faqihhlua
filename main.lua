@@ -1,10 +1,9 @@
 -- ============================================================================
 -- LEON4951 HUB - ANTI HIT
--- GitHub: faqihhlua / n01771542-cmd
--- File: main.lua
+-- PREMIUM UI + MINIMIZE/MORPH ANIMATION + DRAG SYSTEM
 --
--- LOADSTRING EXECUTION:
--- loadstring(game:HttpGet("https://raw.githubusercontent.com/faqihhlua/n01771542-cmd/main/main.lua"))()
+-- GITHUB LOADSTRING:
+-- loadstring(game:HttpGet("https://raw.githubusercontent.com/n01771542-cmd/faqihhlua/main/Main.lua"))()
 -- ============================================================================
 
 local CoreGui = game:GetService("CoreGui")
